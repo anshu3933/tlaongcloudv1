@@ -1,0 +1,60 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mcp-server:
+    build:
+      context: ./backend
+      dockerfile: mcp_server/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=development
+      - MCP_SERVER_PORT=8001
+      - REDIS_URL=redis://redis:6379/0
+      - GCP_PROJECT_ID=thela002
+      - GCS_BUCKET_NAME=betrag-data-test-a
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+      - GEMINI_MODEL=gemini-2.5-flash-preview-05-20
+    volumes:
+      - ./backend/mcp_server/src:/app/mcp_server/src
+      - ./backend/common/src:/app/common/src
+      - ~/.config/gcloud/application_default_credentials.json:/app/credentials.json:ro
+      - ./chroma_db:/app/chroma_db
+    depends_on:
+      redis:
+        condition: service_healthy
+        required: true
+
+  adk-host:
+    build:
+      context: ./backend
+      dockerfile: adk_host/Dockerfile
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./backend/adk_host/src:/app/adk_host/src
+      - ./backend/common/src:/app/common/src
+      - ~/.config/gcloud/application_default_credentials.json:/app/credentials.json:ro
+    environment:
+      - ENVIRONMENT=development
+      - ADK_HOST_PORT=8002
+      - MCP_SERVER_URL=http://mcp-server:8001
+      - REDIS_URL=redis://redis:6379/0
+      - GCP_PROJECT_ID=thela002
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+      - GEMINI_MODEL=gemini-2.5-flash-preview-05-20
+    depends_on:
+      mcp-server:
+        condition: service_started
+        required: true
+      redis:
+        condition: service_started
+        required: true 

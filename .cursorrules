@@ -1,0 +1,64 @@
+###############################################################################
+#  Cursor Rules – Fundamental Principles for This Repository
+#  Purpose: prevent scope-creep, enforce traceability, and guarantee that AI-
+#  generated changes follow the Task-/PBI-centric workflow the team agreed on.
+###############################################################################
+
+# ──────────────────────────── 2.0 FUNDAMENTALS ──────────────────────────────
+- Task-driven development only: NO code change without an agreed task.
+- Every task must link to an approved Product Backlog Item (PBI).
+- PBI features must align with the PRD; raise any mismatch.
+- The User is the final authority on scope, design, and acceptance.
+- Any change outside an agreed task is **expressly prohibited**.
+- Keep task status synchronised in *both* `1-tasks.md` and each task file.
+- The AI agent may not create extra files unless the User approved them first.
+- Before using an external package, research the docs and create `<task-id>-<pkg>-guide.md`.
+
+# ───────────────────────── 2.1 QUALITY & STYLE RULES ───────────────────────
+- Break large work into the smallest cohesive, testable tasks.
+- DRY: store canonical information once; reference it elsewhere.
+- Define all “magic” values as named constants; never repeat literals.
+- Provide/update API & interface docs for every PBI that changes behaviour.
+- Sense-check all generated data for consistency and accuracy.
+
+# ───────────────────── 2.2 SCOPE / CHANGE-MANAGEMENT ───────────────────────
+- No gold-plating: improvements outside scope require a new task.
+- Discuss every requested code change in terms of its PBI/task before coding.
+- Roll back scope creep and open a new task if needed.
+
+# ──────────────────────── 3. PBI MANAGEMENT RULES ──────────────────────────
+- Backlog lives in `docs/delivery/backlog.md`, ordered by priority.
+- Backlog table columns: `ID | Actor | User Story | Status | CoS`.
+- Allowed PBI states: Proposed → Agreed → InProgress → InReview → Done/Rejected.
+- Follow the detailed event-transition steps for each state change.
+- Keep a PBI history log (timestamp, PBI_ID, event type, details, user).
+- Each PBI owns a mini-PRD at `docs/delivery/<PBI-ID>/prd.md` with the
+  required sections (Overview, Problem, Stories, Technical Approach, etc.).
+
+# ──────────────────────── 4. TASK MANAGEMENT RULES ─────────────────────────
+- Task docs live in `docs/delivery/`; summary list file name: `tasks.md`.
+- Individual task file name: `<PBI-ID>-<TASK-ID>.md`.
+- Required sections in each task file:
+  `# [Task-ID] <Task-Name>`, `## Description`, `## Status History`,
+  `## Requirements`, `## Implementation Plan`, `## Verification`, `## Files Modified`.
+- Allowed task states: Proposed → Agreed → InProgress → Review → Done / Blocked.
+- One task per PBI may be *InProgress* at a time (unless User approves more).
+- Update status immediately in both index *and* task file.
+- Validation checklist before coding:
+  • confirm the task exists & status correct,
+  • document TASK-ID in every change commit,
+  • list all files to be modified,
+  • stop if required files are missing or protected.
+- Commit message format when moving **Review → Done**:
+  `<task_id> <short_description>`
+- Pull-request title: `[<task_id>] <short_description>`.
+- Run `git aep "<task_id> <desc>"` (add-everything-push) only after tasks pass.
+
+# ─────────────────────── 4.10 TASK INDEX FILE RULES ────────────────────────
+- Each PBI gets `docs/delivery/<PBI-ID>/tasks.md` structured as:
+  Title, intro line, link to parent PBI, `## Task Summary` table:
+  `| Task ID | Name | Status | Description |`.
+
+###############################################################################
+# End of .cursorrules
+###############################################################################

@@ -1,0 +1,25 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="rag-mcp-common",
+    version="0.1.0",
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
+    install_requires=[
+        "fastapi==0.109.0",
+        "uvicorn[standard]==0.27.0",
+        "pydantic==2.5.3",
+        "pydantic-settings==2.1.0",
+        "python-dotenv==1.0.0",
+        "google-cloud-aiplatform>=1.42.0",
+        "google-cloud-storage==2.14.0",
+        "vertexai>=1.42.0",
+        "httpx==0.26.0",
+        "redis>=5.0.0",
+        "structlog==24.1.0",
+        "prometheus-client==0.19.0",
+        "python-jose[cryptography]==3.3.0",
+        "passlib[bcrypt]==1.7.4",
+    ],
+    python_requires=">=3.9",
+) 
