@@ -113,6 +113,36 @@ async def mcp_endpoint(request: Request, mcp_request: MCPRequest):
                     "required": ["query"]
                 }
             }]
+            tools.extend([
+                {
+                    "name": "retrieve_iep_examples",
+                    "description": "Retrieve similar IEP examples for generation",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "disability_type": {"type": "string", "description": "Disability type code"},
+                            "grade_level": {"type": "string", "description": "Grade level"},
+                            "section": {"type": "string", "description": "Specific IEP section"},
+                            "top_k": {"type": "integer", "default": 3, "description": "Number of examples"}
+                        },
+                        "required": ["disability_type"]
+                    }
+                },
+                {
+                    "name": "analyze_student_progress",
+                    "description": "Analyze student progress from assessments",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "student_id": {"type": "string", "format": "uuid"},
+                            "start_date": {"type": "string", "format": "date"},
+                            "end_date": {"type": "string", "format": "date"},
+                            "include_goals": {"type": "boolean", "default": true}
+                        },
+                        "required": ["student_id"]
+                    }
+                }
+            ])
             return MCPResponse(
                 jsonrpc="2.0",
                 id=mcp_request.id,
@@ -126,6 +156,24 @@ async def mcp_endpoint(request: Request, mcp_request: MCPRequest):
                 args = mcp_request.params.get("arguments", {})
                 result = await retrieve_documents_impl(**args)
                 
+                return MCPResponse(
+                    jsonrpc="2.0",
+                    id=mcp_request.id,
+                    result=result
+                )
+            
+            elif tool_name == "retrieve_iep_examples":
+                args = mcp_request.params.get("arguments", {})
+                result = await retrieve_iep_examples_impl(**args)
+                return MCPResponse(
+                    jsonrpc="2.0",
+                    id=mcp_request.id,
+                    result=result
+                )
+            
+            elif tool_name == "analyze_student_progress":
+                args = mcp_request.params.get("arguments", {})
+                result = await analyze_student_progress_impl(**args)
                 return MCPResponse(
                     jsonrpc="2.0",
                     id=mcp_request.id,
