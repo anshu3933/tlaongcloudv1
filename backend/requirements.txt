@@ -1,22 +1,6 @@
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-pydantic==2.5.3
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
-google-cloud-aiplatform>=1.42.0
-google-cloud-storage==2.14.0
-vertexai>=1.42.0
-httpx[http2]>=0.28.1
-redis>=5.0.0
-structlog==24.1.0
-prometheus-client==0.19.0
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-click
-chromadb
-langchain
-langchain-community
-PyPDF2
-python-docx
-unstructured
-google-genai>=1.18.0 
+# Install the common package first
+-e ./common
+
+# Service-specific dependencies
+# Note: Most dependencies are now managed in common/setup.py
+# Add only service-specific dependencies here that are not in common 

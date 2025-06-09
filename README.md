@@ -37,6 +37,24 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 3. Install dependencies:
 ```bash
+# Install common package first
+cd backend/common
+pip install -e .
+
+# Install service-specific dependencies
+cd ../auth_service
+pip install -r requirements.txt
+
+cd ../workflow_service
+pip install -r requirements.txt
+
+cd ../special_education_service
+pip install -r requirements.txt
+
+cd ../mcp_server
+pip install -r requirements.txt
+
+cd ../adk_host
 pip install -r requirements.txt
 ```
 
@@ -50,6 +68,35 @@ cp .env.example .env
 ```bash
 docker-compose up -d
 ```
+
+## Dependency Management
+
+The project uses a centralized dependency management strategy:
+
+- **Common Package** (`backend/common/setup.py`): Contains all shared dependencies with pinned versions
+- **Service-specific Requirements**: Each service has its own `requirements.txt` that:
+  - References the common package using `-e ../common`
+  - Only includes service-specific dependencies not in common
+
+### Updating Dependencies
+
+1. To update a shared dependency:
+   ```bash
+   # Edit backend/common/setup.py
+   # Update the version in install_requires
+   
+   # Reinstall common package in all services
+   cd backend/common
+   pip install -e .
+   ```
+
+2. To add a service-specific dependency:
+   ```bash
+   # Add to the service's requirements.txt
+   # Install in the service directory
+   cd backend/<service_name>
+   pip install -r requirements.txt
+   ```
 
 ## Development
 

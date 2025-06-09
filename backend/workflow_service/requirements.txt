@@ -1,0 +1,6 @@
+# Install the common package first
+-e ../common
+
+# Workflow service specific dependencies
+# Note: Most dependencies are now managed in common/setup.py
+# Add only workflow-specific dependencies here that are not in common

@@ -1,3 +1,10 @@
+# Install the common package first
+-e ../common
+
+# Auth service specific dependencies
+# Note: Most dependencies are now managed in common/setup.py
+# Add only auth-specific dependencies here that are not in common
+
 fastapi>=0.68.0
 uvicorn>=0.15.0
 pydantic>=1.8.0
