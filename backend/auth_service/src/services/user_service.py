@@ -5,9 +5,13 @@ from datetime import datetime, timedelta
 from jose import jwt, JWTError
 import secrets
 import hashlib
+from passlib.context import CryptContext
 
 from ..repositories.user_repository import UserRepository
 from common.src.config import get_settings
+from ..models.user import User
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class UserService:
     def __init__(self, repository: UserRepository):
@@ -32,78 +36,88 @@ class UserService:
             if creator['role'] not in ['coordinator', 'admin']:
                 raise PermissionError("Only coordinators and admins can create users")
         
-        # Hash password
-        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        # Check if user exists
+        existing_user = await self.repository.get_by_email(email)
+        if existing_user:
+            raise ValueError("User with this email already exists")
         
-        # Create user
-        user = await self.repository.create_user({
-            "email": email,
-            "password_hash": password_hash.decode('utf-8'),
-            "full_name": full_name,
-            "role": role
-        })
+        # Create new user
+        hashed_password = pwd_context.hash(password)
+        user = User(
+            email=email,
+            hashed_password=hashed_password,
+            full_name=full_name,
+            role=role
+        )
         
-        # Remove password hash from response
-        user.pop('password_hash', None)
-        return user
+        created_user = await self.repository.create(user)
+        return {
+            "id": created_user.id,
+            "email": created_user.email,
+            "full_name": created_user.full_name,
+            "role": created_user.role
+        }
     
     async def authenticate_user(self, email: str, password: str) -> Optional[Dict]:
         """Authenticate user and create session"""
-        user = await self.repository.get_user_by_email(email)
-        if not user or not user.get('is_active', True):
+        user = await self.repository.get_by_email(email)
+        if not user or not user.hashed_password:
             return None
         
-        # Verify password
-        if not bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+        if not pwd_context.verify(password, user.hashed_password):
             return None
         
-        # Create JWT token
-        token_data = {
-            "user_id": str(user['id']),
-            "email": user['email'],
-            "role": user['role'],
-            "exp": datetime.utcnow() + timedelta(hours=self.ACCESS_TOKEN_EXPIRE_HOURS)
-        }
-        access_token = jwt.encode(token_data, self.SECRET_KEY, algorithm=self.ALGORITHM)
+        # Create access token
+        access_token = self.create_access_token(
+            data={"sub": user.email, "role": user.role}
+        )
         
         # Store session
         token_hash = hashlib.sha256(access_token.encode()).hexdigest()
         await self.repository.create_session(
-            user_id=user['id'],
+            user_id=user.id,
             token_hash=token_hash,
             expires_at=datetime.utcnow() + timedelta(hours=self.ACCESS_TOKEN_EXPIRE_HOURS)
         )
         
         # Update last login
-        await self.repository.update_last_login(user['id'])
+        await self.repository.update_last_login(user.id)
         
         return {
-            "user": {k: v for k, v in user.items() if k != 'password_hash'},
             "access_token": access_token,
             "token_type": "bearer",
-            "expires_in": self.ACCESS_TOKEN_EXPIRE_HOURS * 3600
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role
+            }
         }
+    
+    def create_access_token(self, data: dict) -> str:
+        to_encode = data.copy()
+        expire = datetime.utcnow() + timedelta(minutes=self.ACCESS_TOKEN_EXPIRE_HOURS)
+        to_encode.update({"exp": expire})
+        encoded_jwt = jwt.encode(to_encode, self.SECRET_KEY, algorithm=self.ALGORITHM)
+        return encoded_jwt
     
     async def verify_token(self, token: str) -> Optional[Dict]:
         """Verify JWT token and return user data"""
         try:
-            # Decode token
             payload = jwt.decode(token, self.SECRET_KEY, algorithms=[self.ALGORITHM])
-            
-            # Check if session exists and is valid
-            token_hash = hashlib.sha256(token.encode()).hexdigest()
-            session = await self.repository.get_session_by_token_hash(token_hash)
-            
-            if not session or session['expires_at'] < datetime.utcnow():
+            email: str = payload.get("sub")
+            if email is None:
                 return None
             
-            # Get user
-            user = await self.repository.get_user(UUID(payload['user_id']))
-            if not user or not user.get('is_active', True):
+            user = await self.repository.get_by_email(email)
+            if user is None:
                 return None
             
-            return {k: v for k, v in user.items() if k != 'password_hash'}
-            
+            return {
+                "id": user.id,
+                "email": user.email,
+                "role": user.role
+            }
         except JWTError:
             return None
     

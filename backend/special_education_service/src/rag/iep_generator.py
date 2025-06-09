@@ -15,7 +15,7 @@ class IEPGenerator:
             project=settings.gcp_project_id,
             location=settings.gcp_region
         )
-        self.model = "gemini-2.5-flash-preview-05-20"
+        self.model = settings.gemini_model
     
     async def generate_iep(
         self,

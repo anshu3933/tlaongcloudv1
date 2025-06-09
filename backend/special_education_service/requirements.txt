@@ -1,6 +1,16 @@
-# Install the common package first
--e ../common
-
 # Special Education service specific dependencies
 # Note: Most dependencies are now managed in common/setup.py
 # Add only special education-specific dependencies here that are not in common
+
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+asyncpg==0.29.0
+python-dotenv==1.0.0
+httpx>=0.28.1
+google-cloud-aiplatform>=1.42.0
+google-genai>=1.18.0
+vertexai>=1.42.0
+numpy>=1.24.0
+structlog==24.1.0

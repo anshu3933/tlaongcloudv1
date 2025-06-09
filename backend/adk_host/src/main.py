@@ -27,9 +27,6 @@ client = genai.Client(
     location=settings.gcp_region,
 )
 
-# Update the model name
-model = "gemini-2.5-flash-preview-05-20"
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle"""
@@ -52,7 +49,7 @@ async def lifespan(app: FastAPI):
             project=settings.gcp_project_id,
             location=settings.gcp_region
         )
-        gemini_model = GenerativeModel('gemini-2.5-flash')
+        gemini_model = GenerativeModel(settings.gemini_model)
         print(f"Initialized Gemini model: {settings.gemini_model}")
     except Exception as e:
         print(f"Warning: Failed to initialize Vertex AI: {str(e)}")
@@ -237,7 +234,7 @@ Answer:"""
         )
 
         response = client.models.generate_content(
-            model=model,
+            model=settings.gemini_model,
             contents=contents,
             config=generate_content_config,
         )

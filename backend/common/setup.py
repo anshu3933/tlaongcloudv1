@@ -20,7 +20,7 @@ setup(
         "google-genai>=1.18.0",
         
         # HTTP & Networking
-        "httpx[http2]==0.26.0",
+        "httpx[http2]>=0.28.1",
         "python-multipart==0.0.7",
         
         # Database & Caching

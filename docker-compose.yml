@@ -1,27 +1,25 @@
 version: '3.8'
 
 services:
-  # Database
+  # Database Services
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15
     environment:
-      POSTGRES_USER: ${DB_USER:-special_ed_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_password}
-      POSTGRES_DB: ${DB_NAME:-special_education_db}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-special_ed_user}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Existing services
   redis:
-    image: redis:7-alpine
+    image: redis:7
     ports:
       - "6379:6379"
     healthcheck:
@@ -30,34 +28,47 @@ services:
       timeout: 5s
       retries: 5
 
-  # Auth Service
+  # Core Services
   auth-service:
     build:
-      context: ./backend
-      dockerfile: auth_service/Dockerfile
+      context: .
+      dockerfile: backend/auth_service/Dockerfile
     ports:
       - "8003:8003"
     environment:
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - REDIS_URL=redis://redis:6379/0
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
+      - GEMINI_MODEL=${GEMINI_MODEL}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
-  # Workflow Service
   workflow-service:
     build:
-      context: ./backend
-      dockerfile: workflow_service/Dockerfile
+      context: .
+      dockerfile: backend/workflow_service/Dockerfile
     ports:
       - "8004:8004"
     environment:
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
-      - REDIS_URL=redis://redis:6379/0
-      - AUTH_SERVICE_URL=http://auth-service:8003
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
+      - SMTP_ENABLED=${SMTP_ENABLED}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - EMAIL_FROM=${SMTP_FROM_EMAIL}
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,22 +77,20 @@ services:
       auth-service:
         condition: service_started
 
-  # Special Education Service
   special-education-service:
     build:
-      context: ./backend
-      dockerfile: special_education_service/Dockerfile
+      context: .
+      dockerfile: backend/special_education_service/Dockerfile
     ports:
       - "8005:8005"
     environment:
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
-      - REDIS_URL=redis://redis:6379/0
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
-      - GEMINI_MODEL=gemini-2.5-flash-preview-05-20
-      - AUTH_SERVICE_URL=http://auth-service:8003
-      - WORKFLOW_SERVICE_URL=http://workflow-service:8004
-    volumes:
-      - ~/.config/gcloud/application_default_credentials.json:/app/credentials.json:ro
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
+      - WORKFLOW_SERVICE_URL=${WORKFLOW_SERVICE_URL}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCP_REGION=${GCP_REGION}
+      - GEMINI_MODEL=${GEMINI_MODEL}
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,57 +101,47 @@ services:
       workflow-service:
         condition: service_started
 
-  # Updated MCP Server
   mcp-server:
     build:
-      context: ./backend
-      dockerfile: mcp_server/Dockerfile
+      context: .
+      dockerfile: backend/mcp_server/Dockerfile
     ports:
-      - "8001:8001"
+      - "${MCP_SERVER_PORT}:8001"
     environment:
-      - ENVIRONMENT=development
-      - MCP_SERVER_PORT=8001
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=${REDIS_URL}
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
-      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
-      - GEMINI_MODEL=gemini-2.5-flash-preview-05-20
+      - GCP_REGION=${GCP_REGION}
+      - GEMINI_MODEL=${GEMINI_MODEL}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
     volumes:
-      - ./backend/mcp_server/src:/app/mcp_server/src
-      - ./backend/common/src:/app/common/src
-      - ~/.config/gcloud/application_default_credentials.json:/app/credentials.json:ro
-      - ./chroma_db:/app/chroma_db
+      - ${GOOGLE_APPLICATION_CREDENTIALS}:/app/gcp-credentials.json:ro
     depends_on:
       redis:
         condition: service_healthy
 
-  # Updated ADK Host
   adk-host:
     build:
-      context: ./backend
-      dockerfile: adk_host/Dockerfile
+      context: .
+      dockerfile: backend/adk_host/Dockerfile
     ports:
-      - "8002:8002"
-    volumes:
-      - ./backend/adk_host/src:/app/adk_host/src
-      - ./backend/common/src:/app/common/src
-      - ~/.config/gcloud/application_default_credentials.json:/app/credentials.json:ro
+      - "${ADK_HOST_PORT}:8002"
     environment:
-      - ENVIRONMENT=development
-      - ADK_HOST_PORT=8002
-      - MCP_SERVER_URL=http://mcp-server:8001
-      - REDIS_URL=redis://redis:6379/0
+      - MCP_SERVER_URL=${MCP_SERVER_URL}
+      - REDIS_URL=${REDIS_URL}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
+      - WORKFLOW_SERVICE_URL=${WORKFLOW_SERVICE_URL}
+      - SPECIAL_ED_SERVICE_URL=${SPECIAL_ED_SERVICE_URL}
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
-      - GEMINI_MODEL=gemini-2.5-flash-preview-05-20
-      - AUTH_SERVICE_URL=http://auth-service:8003
-      - WORKFLOW_SERVICE_URL=http://workflow-service:8004
-      - SPECIAL_ED_SERVICE_URL=http://special-education-service:8005
+      - GCP_REGION=${GCP_REGION}
+      - GEMINI_MODEL=${GEMINI_MODEL}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
+    volumes:
+      - ${GOOGLE_APPLICATION_CREDENTIALS}:/app/gcp-credentials.json:ro
     depends_on:
       mcp-server:
         condition: service_started
       redis:
-        condition: service_started
+        condition: service_healthy
       auth-service:
         condition: service_started
       workflow-service:

@@ -3,6 +3,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from contextlib import asynccontextmanager
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
 
 from .services.user_service import UserService
 from .services.audit_service import AuditService
@@ -11,6 +13,11 @@ from .repositories.audit_repository import AuditRepository
 from common.src.config import get_settings
 
 settings = get_settings()
+
+# Database setup
+DATABASE_URL = settings.database_url
+engine = create_async_engine(DATABASE_URL)
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 # Global instances
 user_service: Optional[UserService] = None
@@ -21,13 +28,21 @@ async def lifespan(app: FastAPI):
     """Initialize services on startup"""
     global user_service, audit_service
     
-    # Initialize repositories
-    user_repo = UserRepository(settings.database_url)
-    audit_repo = AuditRepository(settings.database_url)
+    # Create database tables
+    async with engine.begin() as conn:
+        from .models.user import Base as UserBase
+        from .models.audit_log import Base as AuditBase
+        await conn.run_sync(UserBase.metadata.create_all)
+        await conn.run_sync(AuditBase.metadata.create_all)
     
-    # Initialize services
-    user_service = UserService(user_repo)
-    audit_service = AuditService(audit_repo)
+    # Initialize repositories
+    async with async_session() as session:
+        user_repo = UserRepository(session)
+        audit_repo = AuditRepository(session)
+        
+        # Initialize services
+        user_service = UserService(user_repo)
+        audit_service = AuditService(audit_repo)
     
     print("Auth service initialized")
     yield

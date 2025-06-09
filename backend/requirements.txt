@@ -4,3 +4,7 @@
 # Service-specific dependencies
 # Note: Most dependencies are now managed in common/setup.py
 # Add only service-specific dependencies here that are not in common 
+
+# Shared backend dependencies
+# Add only if httpx is present
+httpx>=0.28.1 
