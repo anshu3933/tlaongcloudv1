@@ -1,19 +1,34 @@
-# Auth service specific dependencies
-# Note: Most dependencies are now managed in common/setup.py
-# Add only auth-specific dependencies here that are not in common
+# Authentication Service Dependencies
+# Production-ready dependencies for comprehensive auth service
 
+# Core FastAPI and ASGI
 fastapi==0.109.2
 uvicorn[standard]==0.27.1
+
+# Data validation and settings
 pydantic==2.6.1
 pydantic-settings==2.1.0
+email-validator==2.1.0.post1
+
+# Database
+sqlalchemy==2.0.25
+alembic==1.13.1
 asyncpg==0.29.0
-python-dotenv==1.0.0
-httpx>=0.28.1
+psycopg2-binary==2.9.9
+
+# Authentication and security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
+
+# HTTP client and utilities
+httpx>=0.28.1
+python-dotenv==1.0.0
+
+# Logging
 structlog==24.1.0
-sqlalchemy==2.0.25
-alembic==1.13.1
-email-validator==2.1.0.post1
-psycopg2-binary==2.9.9
+
+# Testing dependencies (optional)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
