@@ -1,9 +1,8 @@
 """Vector store management using ChromaDB for development and Vertex AI for production"""
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import chromadb
 from chromadb.config import Settings
-import numpy as np
 from vertexai import aiplatform
 
 class VectorStore:

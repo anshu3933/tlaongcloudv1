@@ -6,7 +6,12 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import logging
 
-from .config import get_auth_settings
+try:
+    from .config import get_auth_settings
+    from .models import Base
+except ImportError:
+    from config import get_auth_settings
+    from models import Base
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +56,6 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def create_tables():
     """Create all database tables."""
-    from .models import User, UserSession, AuditLog
     
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -69,3 +73,15 @@ async def close_db():
     """Close database connections."""
     await engine.dispose()
     logger.info("Database connections closed")
+
+async def check_database_connection() -> bool:
+    """Check if database connection is working."""
+    from sqlalchemy import text
+    
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception as e:
+        logger.error(f"Database connection check failed: {e}")
+        return False

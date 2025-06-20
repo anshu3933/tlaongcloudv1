@@ -1,9 +1,9 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import json
+import asyncio
 from google import genai
 from google.genai import types
 
-from common.src.config import get_settings
 from common.src.vector_store import VectorStore
 
 class IEPGenerator:
@@ -55,15 +55,14 @@ class IEPGenerator:
     
     async def _retrieve_similar_ieps(self, query: str, top_k: int = 3) -> List[Dict]:
         """Retrieve similar IEPs from vector store"""
-        # Create query embedding
+        # Create query embedding (run in thread pool to avoid blocking)
         embedding_model = self.client.models.get_model("text-embedding-004")
-        query_embedding = await embedding_model.embed_content(query)
+        query_embedding = await asyncio.to_thread(embedding_model.embed_content, query)
         
         # Search vector store
-        results = self.vector_store.search(
+        results = await self.vector_store.search(
             query_embedding=query_embedding.embedding,
-            top_k=top_k,
-            filters={"type": "iep"}
+            top_k=top_k
         )
         return results
     
@@ -101,7 +100,8 @@ class IEPGenerator:
         Return as JSON matching the template structure.
         """
         
-        response = self.client.models.generate_content(
+        response = await asyncio.to_thread(
+            self.client.models.generate_content,
             model=self.model,
             contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
             config=types.GenerateContentConfig(
@@ -148,7 +148,8 @@ class IEPGenerator:
         Return as JSON array.
         """
         
-        response = self.client.models.generate_content(
+        response = await asyncio.to_thread(
+            self.client.models.generate_content,
             model=self.model,
             contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
             config=types.GenerateContentConfig(
@@ -163,7 +164,7 @@ class IEPGenerator:
     async def create_embedding(self, text: str) -> List[float]:
         """Create embedding for text"""
         embedding_model = self.client.models.get_model("text-embedding-004")
-        result = await embedding_model.embed_content(text)
+        result = await asyncio.to_thread(embedding_model.embed_content, text)
         return result.embedding
     
     def _prepare_context(

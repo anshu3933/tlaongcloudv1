@@ -1,29 +1,32 @@
 """Test configuration and fixtures"""
 import asyncio
 import pytest
+import os
 from typing import AsyncGenerator, Generator
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from httpx import AsyncClient
 
-from common.src.config import Settings, get_settings
+# Set test environment before importing settings
+os.environ.setdefault('ENVIRONMENT', 'testing')
+os.environ.setdefault('DATABASE_URL', 'sqlite+aiosqlite:///./test_special_education.db')
+os.environ.setdefault('TEST_DATABASE_URL', 'sqlite+aiosqlite:///./test_special_education.db')
+os.environ.setdefault('JWT_SECRET_KEY', 'test-jwt-secret-key-for-testing-only-32-chars')
+os.environ.setdefault('GCP_PROJECT_ID', 'test-project')
+os.environ.setdefault('GCS_BUCKET_NAME', 'test-bucket')
+os.environ.setdefault('GEMINI_MODEL', 'gemini-1.5-pro')
+
+from common.src.config import get_settings
+from auth_service.src.models import Base
 from auth_service.src.main import app as auth_app
 from workflow_service.src.main import app as workflow_app
 from special_education_service.src.main import app as special_ed_app
 from mcp_server.src.main import app as mcp_app
 from adk_host.src.main import app as adk_app
 
-# Test settings
-test_settings = Settings(
-    environment="testing",
-    database_url="postgresql+asyncpg://test_user:test_pass@localhost:5432/test_db",
-    redis_url="redis://localhost:6379/1",
-    jwt_secret_key="test-secret-key",
-    gcp_project_id="test-project",
-    gcs_bucket_name="test-bucket",
-    smtp_enabled=False
-)
+# Get test settings from environment
+test_settings = get_settings()
 
 # Database setup
 engine = create_async_engine(test_settings.database_url)

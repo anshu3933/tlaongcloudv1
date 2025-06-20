@@ -1,9 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.sql import func
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-
-Base = declarative_base()
+from .base import Base
 
 class User(Base):
     __tablename__ = "users"
@@ -19,5 +17,5 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    # Relationships (commented out for standalone testing)
-    # sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan") 
+    # Relationships
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan") 

@@ -1,7 +1,6 @@
-import bcrypt
 from typing import Optional, Dict, List
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 import secrets
 import hashlib
@@ -77,7 +76,7 @@ class UserService:
         await self.repository.create_session(
             user_id=user.id,
             token_hash=token_hash,
-            expires_at=datetime.utcnow() + timedelta(hours=self.ACCESS_TOKEN_EXPIRE_HOURS)
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=self.ACCESS_TOKEN_EXPIRE_HOURS)
         )
         
         # Update last login
@@ -96,7 +95,7 @@ class UserService:
     
     def create_access_token(self, data: dict) -> str:
         to_encode = data.copy()
-        expire = datetime.utcnow() + timedelta(minutes=self.ACCESS_TOKEN_EXPIRE_HOURS)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=self.ACCESS_TOKEN_EXPIRE_HOURS)
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(to_encode, self.SECRET_KEY, algorithm=self.ALGORITHM)
         return encoded_jwt

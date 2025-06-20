@@ -1,8 +1,7 @@
 """Common Pydantic schemas used across the application"""
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field
 from typing import Optional, Any, List, Generic, TypeVar
-from datetime import datetime
-from uuid import UUID
+from datetime import datetime, timezone
 
 # Generic type for paginated responses
 T = TypeVar('T')
@@ -17,7 +16,7 @@ class UserInfo(BaseModel):
 
 class ResponseMetadata(BaseModel):
     """Standard response metadata"""
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     request_id: Optional[str] = None
     version: str = "1.0.0"
 

@@ -1,8 +1,8 @@
 """MCP Server with GCS document retrieval"""
+from __future__ import annotations
+
 import os
-import json
-import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel, Field
@@ -10,7 +10,13 @@ from pydantic import BaseModel, Field
 from common.src.config import get_settings
 from common.src.document_processor import DocumentProcessor
 from common.src.vector_store import VectorStore
-from vertexai.language_models import TextEmbeddingModel
+from .middleware.error_handler import ErrorHandlerMiddleware
+
+# Import vertexai with error handling for optional dependency
+try:
+    from vertexai.language_models import TextEmbeddingModel
+except ImportError:
+    TextEmbeddingModel = None
 
 settings = get_settings()
 
@@ -30,10 +36,18 @@ async def lifespan(app: FastAPI):
         collection_name="rag_documents"
     )
     
-    # Initialize embedding model
-    import vertexai
-    vertexai.init(project=settings.gcp_project_id, location=settings.gcp_region)
-    embedding_model = TextEmbeddingModel.from_pretrained("text-embedding-004")
+    # Initialize embedding model if available
+    if TextEmbeddingModel:
+        try:
+            import vertexai
+            vertexai.init(project=settings.gcp_project_id, location=settings.gcp_region)
+            embedding_model = TextEmbeddingModel.from_pretrained("text-embedding-004")
+        except Exception as e:
+            print(f"Warning: Could not initialize Vertex AI: {e}")
+            embedding_model = None
+    else:
+        print("Warning: Vertex AI not available, embedding model disabled")
+        embedding_model = None
     
     # Initialize document processor
     document_processor = DocumentProcessor(
@@ -50,6 +64,92 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Add error handling middleware
+app.add_middleware(ErrorHandlerMiddleware)
+
+# Implementation functions for MCP tools
+
+async def retrieve_iep_examples_impl(student_id: str, disability_type: Optional[str] = None, top_k: int = 5) -> Dict[str, Any]:
+    """Retrieve similar IEP examples for reference"""
+    try:
+        # Create search query based on parameters
+        query_parts = ["IEP"]
+        if disability_type:
+            query_parts.append(disability_type)
+        
+        query = " ".join(query_parts)
+        
+        # Get embeddings for the query
+        embeddings = embedding_model.get_embeddings([query])
+        query_embedding = embeddings[0].values
+        
+        # Search vector store for similar IEPs
+        results = await vector_store.search(
+            query_embedding=query_embedding,
+            top_k=top_k,
+            filters={"document_type": "iep"}
+        )
+        
+        return {
+            "student_id": student_id,
+            "examples": results,
+            "query": query,
+            "count": len(results)
+        }
+        
+    except Exception as e:
+        return {
+            "error": f"Failed to retrieve IEP examples: {str(e)}",
+            "student_id": student_id,
+            "examples": [],
+            "count": 0
+        }
+
+async def analyze_student_progress_impl(student_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+    """Analyze student progress over time"""
+    try:
+        # In a real implementation, this would query student data
+        # For now, return a mock analysis structure
+        
+        analysis = {
+            "student_id": student_id,
+            "analysis_period": {
+                "start_date": start_date,
+                "end_date": end_date
+            },
+            "progress_summary": {
+                "academic_progress": "On track",
+                "goal_completion": "75%",
+                "areas_of_strength": ["Reading comprehension", "Math problem solving"],
+                "areas_for_improvement": ["Written expression", "Social skills"],
+                "recommendations": [
+                    "Continue current reading intervention",
+                    "Increase focus on writing activities",
+                    "Add social skills group sessions"
+                ]
+            },
+            "metrics": {
+                "goals_met": 3,
+                "goals_in_progress": 1,
+                "goals_not_started": 0,
+                "assessment_scores": {
+                    "reading": 85,
+                    "math": 78,
+                    "writing": 65
+                }
+            },
+            "generated_at": "2024-01-01T00:00:00Z"
+        }
+        
+        return analysis
+        
+    except Exception as e:
+        return {
+            "error": f"Failed to analyze student progress: {str(e)}",
+            "student_id": student_id,
+            "analysis_period": {"start_date": start_date, "end_date": end_date}
+        }
 
 class MCPRequest(BaseModel):
     jsonrpc: str = Field(default="2.0")
@@ -137,7 +237,7 @@ async def mcp_endpoint(request: Request, mcp_request: MCPRequest):
                             "student_id": {"type": "string", "format": "uuid"},
                             "start_date": {"type": "string", "format": "date"},
                             "end_date": {"type": "string", "format": "date"},
-                            "include_goals": {"type": "boolean", "default": true}
+                            "include_goals": {"type": "boolean", "default": True}
                         },
                         "required": ["student_id"]
                     }

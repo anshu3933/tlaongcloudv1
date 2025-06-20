@@ -3,7 +3,8 @@
 import hashlib
 import secrets
 import re
-from datetime import datetime, timedelta
+import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from passlib.context import CryptContext
 from jose import jwt, JWTError
@@ -57,12 +58,20 @@ class PasswordValidator:
         return len(errors) == 0, errors
 
 def hash_password(password: str) -> str:
-    """Hash a password using bcrypt."""
+    """Hash a password using bcrypt (synchronous)."""
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
+    """Verify a password against its hash (synchronous)."""
     return pwd_context.verify(plain_password, hashed_password)
+
+async def hash_password_async(password: str) -> str:
+    """Hash a password using bcrypt (async - runs in thread pool)."""
+    return await asyncio.to_thread(pwd_context.hash, password)
+
+async def verify_password_async(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash (async - runs in thread pool)."""
+    return await asyncio.to_thread(pwd_context.verify, plain_password, hashed_password)
 
 def generate_token_hash(token: str) -> str:
     """Generate SHA256 hash of a token for storage."""
@@ -86,13 +95,13 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     to_encode = data.copy()
     
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     
     to_encode.update({
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(timezone.utc),
         "type": "access"
     })
     
@@ -109,25 +118,26 @@ def create_refresh_token(user_id: int) -> str:
     Returns:
         Encoded refresh token
     """
-    expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
     
     to_encode = {
         "sub": str(user_id),
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(timezone.utc),
         "type": "refresh"
     }
     
     encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
     return encoded_jwt
 
-def verify_token(token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
+def verify_token(token: str, token_type: str = "access", check_blacklist: bool = True) -> Optional[Dict[str, Any]]:
     """
     Verify and decode a JWT token.
     
     Args:
         token: JWT token to verify
         token_type: Expected token type ("access" or "refresh")
+        check_blacklist: Whether to check if token is blacklisted
     
     Returns:
         Decoded token payload or None if invalid
@@ -142,9 +152,15 @@ def verify_token(token: str, token_type: str = "access") -> Optional[Dict[str, A
         
         # Check expiration
         exp = payload.get("exp")
-        if exp and datetime.utcnow() > datetime.fromtimestamp(exp):
+        if exp and datetime.now(timezone.utc) > datetime.fromtimestamp(exp, tz=timezone.utc):
             logger.debug("Token has expired")
             return None
+        
+        # Check blacklist if required (this will be implemented in the repository layer)
+        if check_blacklist:
+            token_hash = generate_token_hash(token)
+            # Note: Blacklist checking will be implemented in the auth dependency
+            # to avoid circular imports with the repository layer
         
         return payload
     

@@ -1,13 +1,13 @@
 """Repository layer for IEP operations"""
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, and_, or_, desc
+from sqlalchemy import select, update, and_, desc
 from sqlalchemy.orm import selectinload, joinedload
-from datetime import datetime, date
+from datetime import datetime
 
 from ..models.special_education_models import (
-    IEP, IEPGoal, IEPTemplate, Student, IEPStatus, GoalStatus
+    IEP, IEPGoal, IEPTemplate, IEPStatus, GoalStatus
 )
 
 class IEPRepository:

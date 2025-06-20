@@ -1,8 +1,8 @@
 """Pydantic schemas for request/response validation."""
 
 from typing import Optional, List, Dict, Any
-from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field, validator
+from datetime import datetime, timezone
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from enum import Enum
 
 # Base schemas
@@ -37,7 +37,8 @@ class UserCreate(UserBase):
     """Schema for user creation."""
     password: str = Field(..., min_length=8, max_length=128)
     
-    @validator('password')
+    @field_validator('password')
+    @classmethod
     def validate_password(cls, v):
         """Validate password complexity."""
         try:
@@ -103,7 +104,8 @@ class PasswordChange(BaseModel):
     current_password: str
     new_password: str = Field(..., min_length=8, max_length=128)
     
-    @validator('new_password')
+    @field_validator('new_password')
+    @classmethod
     def validate_new_password(cls, v):
         """Validate new password complexity."""
         try:
@@ -178,7 +180,7 @@ class ErrorResponse(BaseModel):
     """Schema for error responses."""
     detail: str
     errors: Optional[List[ErrorDetail]] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # Health check schema
 class HealthResponse(BaseModel):
@@ -186,7 +188,7 @@ class HealthResponse(BaseModel):
     status: str
     service: str
     version: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     database: Optional[str] = None
 
 # Pagination schemas
@@ -278,12 +280,13 @@ def validate_offset(v: int) -> int:
 class IDValidationMixin(BaseModel):
     """Mixin for ID validation."""
     
-    @validator('*', pre=True)
-    def validate_ids(cls, v, field):
+    @field_validator('*', mode='before')
+    @classmethod
+    def validate_ids(cls, v, info):
         """Validate ID fields."""
-        if field.name.endswith('_id') and isinstance(v, int):
+        if info.field_name and info.field_name.endswith('_id') and isinstance(v, int):
             if v <= 0:
-                raise ValueError(f"{field.name} must be positive")
+                raise ValueError(f"{info.field_name} must be positive")
         return v
 
 # Configuration schemas

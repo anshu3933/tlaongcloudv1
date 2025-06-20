@@ -1,6 +1,5 @@
 """Tests for auth service endpoints"""
 import pytest
-from httpx import AsyncClient
 from uuid import uuid4
 
 pytestmark = pytest.mark.asyncio

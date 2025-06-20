@@ -1,6 +1,6 @@
-from fastapi import Request, HTTPException, Depends, status
+from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import List, Optional
+from typing import List
 import httpx
 
 from common.src.config import get_settings

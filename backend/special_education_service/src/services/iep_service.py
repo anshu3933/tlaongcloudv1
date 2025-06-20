@@ -1,22 +1,24 @@
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 from uuid import UUID
 import json
-from datetime import datetime
 
 from common.src.vector_store import VectorStore
 from ..repositories.iep_repository import IEPRepository
+from ..repositories.pl_repository import PLRepository
 from ..rag.iep_generator import IEPGenerator
 
 class IEPService:
     def __init__(
         self,
         repository: IEPRepository,
+        pl_repository: PLRepository,
         vector_store: VectorStore,
         iep_generator: IEPGenerator,
         workflow_client,
         audit_client
     ):
         self.repository = repository
+        self.pl_repository = pl_repository
         self.vector_store = vector_store
         self.iep_generator = iep_generator
         self.workflow_client = workflow_client
@@ -43,7 +45,7 @@ class IEPService:
             student_id, 
             limit=3
         )
-        previous_pls = await self.repository.get_student_present_levels(
+        previous_pls = await self.pl_repository.get_student_present_levels(
             student_id,
             limit=3
         )
@@ -150,7 +152,7 @@ class IEPService:
             raise ValueError(f"IEP {iep_id} not found")
         
         if iep['status'] != 'draft':
-            raise ValueError(f"IEP must be in draft status to submit for approval")
+            raise ValueError("IEP must be in draft status to submit for approval")
         
         # 2. Update IEP status to under_review
         await self.repository.update_iep_status(iep_id, 'under_review')

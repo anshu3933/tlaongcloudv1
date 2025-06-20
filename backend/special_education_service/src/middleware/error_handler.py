@@ -3,7 +3,7 @@ import logging
 import traceback
 import time
 from typing import Callable
-from fastapi import Request, Response, HTTPException
+from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from pydantic import ValidationError

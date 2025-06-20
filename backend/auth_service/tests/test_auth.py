@@ -1,13 +1,20 @@
 import pytest
+import os
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+
+# Set test environment variables
+os.environ.setdefault('AUTH_JWT_SECRET_KEY', 'test-jwt-secret-key-for-testing-only-32-chars')
+os.environ.setdefault('AUTH_DATABASE_URL', os.getenv('TEST_DATABASE_URL', 'sqlite+aiosqlite:///./test_auth.db'))
+os.environ.setdefault('AUTH_ENVIRONMENT', 'testing')
+
 from ..src.main import app
 from ..src.models.user import Base as UserBase
 from ..src.models.audit_log import Base as AuditBase
 
 # Test database setup
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/test_db"
+TEST_DATABASE_URL = os.getenv('TEST_DATABASE_URL', 'sqlite+aiosqlite:///./test_auth.db')
 engine = create_async_engine(TEST_DATABASE_URL)
 TestingSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

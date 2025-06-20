@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
 from ..dependencies import (
     get_audit_repository, get_user_repository, get_client_ip,
-    require_superuser, require_self_or_admin, get_current_user
+    require_superuser, require_self_or_admin
 )
 from ..repositories.user_repository import UserRepository
 from ..repositories.audit_repository import AuditRepository
@@ -15,9 +15,8 @@ from ..models.user import User
 from ..security import hash_password, PasswordValidator
 from ..schemas import (
     UserResponse, UserUpdate, PasswordChange, UserSummary,
-    PaginatedUserResponse, PaginationMeta, SuccessResponse,
-    UserDeactivationResponse, UserActivationResponse,
-    PasswordChangeResponse, AuditLogResponse, UserListQuery
+    PaginatedUserResponse, PaginationMeta, UserDeactivationResponse, UserActivationResponse,
+    PasswordChangeResponse, AuditLogResponse
 )
 import logging
 

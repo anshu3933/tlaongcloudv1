@@ -11,9 +11,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Import models
 from models.user import Base as UserBase
-from models.user_session import Base as UserSessionBase
-from models.audit_log import Base as AuditLogBase
-from models import User, UserSession, AuditLog
 
 # Get database URL from environment
 from common.src.config import get_settings

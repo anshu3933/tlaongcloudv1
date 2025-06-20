@@ -1,9 +1,7 @@
 """Basic test script to verify end-to-end functionality"""
 import asyncio
 import httpx
-import json
 from datetime import date, datetime
-from uuid import uuid4
 
 # Test configuration
 BASE_URL = "http://localhost:8006"  # Adjust port as needed
@@ -29,7 +27,7 @@ async def test_basic_flow():
                     break
                 else:
                     print(f"⏳ Attempt {attempt + 1}: Service not ready (status: {response.status_code})")
-            except Exception as e:
+            except Exception:
                 if attempt == 0:
                     print("⏳ Waiting for service to start...")
                 await asyncio.sleep(2)

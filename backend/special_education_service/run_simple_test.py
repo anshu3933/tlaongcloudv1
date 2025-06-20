@@ -2,7 +2,6 @@
 import os
 import sys
 import asyncio
-import httpx
 from pathlib import Path
 
 # Add project to path
@@ -31,7 +30,7 @@ async def test_simple_operations():
         # Test 1: Import and create models
         print("1. Testing model imports...")
         from special_education_service.src.models.special_education_models import (
-            Student, IEP, DisabilityType, Base
+            Base
         )
         print("✅ Models imported successfully")
         

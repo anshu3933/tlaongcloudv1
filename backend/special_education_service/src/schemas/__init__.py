@@ -1,8 +1,17 @@
 """Pydantic schemas for request/response validation"""
-from .student_schemas import *
-from .iep_schemas import *
-from .template_schemas import *
-from .common_schemas import *
+from .student_schemas import (
+    StudentCreate, StudentUpdate, StudentResponse, StudentSearch
+)
+from .iep_schemas import (
+    IEPCreate, IEPUpdate, IEPResponse, 
+    IEPGoalCreate, IEPGoalUpdate, IEPGoalResponse
+)
+from .template_schemas import (
+    IEPTemplateCreate, IEPTemplateUpdate, IEPTemplateResponse
+)
+from .common_schemas import (
+    UserInfo, ResponseMetadata, PaginatedResponse
+)
 
 __all__ = [
     # Student schemas

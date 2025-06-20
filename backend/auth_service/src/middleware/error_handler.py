@@ -2,9 +2,9 @@
 
 import logging
 import traceback
-from datetime import datetime
-from typing import Any, Dict
-from fastapi import Request, Response, HTTPException
+from datetime import datetime, timezone
+from typing import Dict
+from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.exc import SQLAlchemyError
@@ -95,7 +95,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         error_response = ErrorResponse(
             detail=detail,
             errors=errors,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
         
         # Add additional context for debugging in development
@@ -139,7 +139,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         self.log_body = log_body
     
     async def dispatch(self, request: Request, call_next):
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         
         # Log request
         client_ip = self.get_client_ip(request)
@@ -152,7 +152,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         
         # Calculate duration
-        duration = (datetime.utcnow() - start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         
         # Log response
         logger.info(
@@ -187,7 +187,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next):
         client_ip = self.get_client_ip(request)
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         
         # Skip rate limiting for health checks
         if request.url.path in ["/health", "/", "/docs", "/openapi.json"]:

@@ -5,7 +5,6 @@ import asyncio
 import sys
 import os
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime, timedelta
 
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -74,7 +73,7 @@ def test_auth_settings():
 # Test schemas
 def test_user_schemas():
     """Test user-related Pydantic schemas."""
-    from schemas import UserCreate, UserResponse, UserLogin
+    from schemas import UserCreate, UserLogin
     
     # Test UserCreate validation
     user_data = {

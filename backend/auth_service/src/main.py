@@ -11,6 +11,7 @@ from .middleware.error_handler import (
     ErrorHandlerMiddleware, SecurityHeadersMiddleware,
     RequestLoggingMiddleware, RateLimitMiddleware
 )
+from .middleware.security import SecurityEnhancementMiddleware, RequestSizeLimitMiddleware
 from .routers import auth, users
 from .schemas import HealthResponse
 
@@ -75,6 +76,14 @@ app.add_middleware(
     RateLimitMiddleware,
     requests_per_minute=settings.rate_limit_requests
 )
+# Enhanced security middleware
+app.add_middleware(
+    SecurityEnhancementMiddleware,
+    block_suspicious_agents=True,
+    enable_csrf_protection=False,  # Disabled for API service
+    max_request_size=5 * 1024 * 1024  # 5MB for auth service
+)
+app.add_middleware(RequestSizeLimitMiddleware, max_size=5 * 1024 * 1024)
 
 # Include routers
 app.include_router(auth.router, prefix="/api/v1")
@@ -99,13 +108,20 @@ async def root():
 @app.get("/health", response_model=HealthResponse, tags=["system"])
 async def health_check():
     """Health check endpoint for load balancers and monitoring."""
+    from .database import check_database_connection
+    
     try:
-        # Basic health check - could be extended to check database connectivity
+        # Check database connectivity
+        db_status = "connected" if await check_database_connection() else "disconnected"
+        
+        # Determine overall health
+        status = "healthy" if db_status == "connected" else "unhealthy"
+        
         return HealthResponse(
-            status="healthy",
+            status=status,
             service="auth-service",
             version="1.0.0",
-            database="connected"  # Could verify actual DB connection
+            database=db_status
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")

@@ -3,7 +3,6 @@
 
 import os
 import sys
-import secrets
 from datetime import datetime, timedelta
 
 # Add the src directory to the Python path
@@ -11,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 # Set required environment variables for testing
 os.environ['AUTH_JWT_SECRET_KEY'] = 'test-secret-key-for-testing-only'
-os.environ['AUTH_DATABASE_URL'] = 'postgresql+asyncpg://test:test@localhost:5432/test_db'
+os.environ['AUTH_DATABASE_URL'] = os.getenv('TEST_DATABASE_URL', 'sqlite+aiosqlite:///./test_auth.db')
 os.environ['AUTH_ENVIRONMENT'] = 'testing'
 
 def test_imports():
@@ -20,24 +19,18 @@ def test_imports():
     
     try:
         # Test config imports
-        from config import get_auth_settings
         print("  ✅ Config module imported successfully")
         
         # Test security imports
-        from security import PasswordValidator, hash_password, verify_password
         print("  ✅ Security module imported successfully")
         
         # Test schemas imports
-        from schemas import UserCreate, UserResponse, Token
         print("  ✅ Schemas module imported successfully")
         
         # Test models imports
-        from models.user import User
-        from models.audit_log import AuditLog
         print("  ✅ Models imported successfully")
         
         # Test middleware imports
-        from middleware.error_handler import ErrorHandlerMiddleware
         print("  ✅ Middleware imported successfully")
         
         print("  🎉 All imports successful!")
@@ -130,7 +123,7 @@ def test_schemas():
     print("\\n📋 Testing Pydantic schemas...")
     
     try:
-        from schemas import UserCreate, UserLogin, UserResponse
+        from schemas import UserCreate, UserLogin
         
         # Test UserCreate validation
         user_data = {

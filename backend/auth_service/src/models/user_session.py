@@ -1,9 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.sql import func
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-
-Base = declarative_base()
+from .base import Base
 
 class UserSession(Base):
     __tablename__ = "user_sessions"
@@ -14,5 +12,5 @@ class UserSession(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # Relationships (commented out for standalone testing)
-    # user = relationship("User", back_populates="sessions")
+    # Relationships
+    user = relationship("User", back_populates="sessions")

@@ -7,15 +7,13 @@ import logging
 
 from ..database import get_db
 from ..repositories.iep_repository import IEPRepository
-from ..repositories.student_repository import StudentRepository
-from ..repositories.template_repository import TemplateRepository
+from ..repositories.pl_repository import PLRepository
 from ..services.iep_service import IEPService
 from ..services.user_adapter import UserAdapter
 from ..rag.iep_generator import IEPGenerator
 from ..schemas.iep_schemas import (
     IEPCreate, IEPResponse, IEPGenerateSection
 )
-from ..schemas.common_schemas import SuccessResponse
 from common.src.config import get_settings
 from common.src.vector_store import VectorStore
 
@@ -39,8 +37,7 @@ iep_generator = IEPGenerator(vector_store=vector_store, settings=settings)
 async def get_iep_service(db: AsyncSession = Depends(get_db)) -> IEPService:
     """Dependency to get IEP service with repositories"""
     iep_repo = IEPRepository(db)
-    student_repo = StudentRepository(db)
-    template_repo = TemplateRepository(db)
+    pl_repo = PLRepository(db)
     
     # Create mock clients for now - TODO: integrate with actual services
     workflow_client = None
@@ -48,6 +45,7 @@ async def get_iep_service(db: AsyncSession = Depends(get_db)) -> IEPService:
     
     return IEPService(
         repository=iep_repo,
+        pl_repository=pl_repo,
         vector_store=vector_store,
         iep_generator=iep_generator,
         workflow_client=workflow_client,
@@ -267,7 +265,6 @@ async def find_similar_ieps(
         # Use the IEP generator's retrieval capability
         similar_ieps = await iep_generator._retrieve_similar_ieps(
             query=query_text,
-            filters={"student_id": str(student_id)},
             top_k=top_k
         )
         

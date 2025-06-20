@@ -10,8 +10,7 @@ from ..database import get_db
 from ..repositories.template_repository import TemplateRepository
 from ..services.user_adapter import UserAdapter
 from ..schemas.template_schemas import (
-    IEPTemplateCreate, IEPTemplateUpdate, IEPTemplateResponse, IEPTemplateSearch,
-    DisabilityTypeCreate, DisabilityTypeResponse
+    IEPTemplateCreate, IEPTemplateUpdate, IEPTemplateResponse, DisabilityTypeCreate, DisabilityTypeResponse
 )
 from ..schemas.common_schemas import PaginatedResponse, SuccessResponse
 from common.src.config import get_settings

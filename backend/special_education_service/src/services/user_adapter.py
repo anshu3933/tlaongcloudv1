@@ -1,9 +1,8 @@
 """User adapter for resolving auth service users and caching"""
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 import asyncio
 import time
 import httpx
-from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)

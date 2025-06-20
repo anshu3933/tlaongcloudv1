@@ -71,7 +71,6 @@ async def drop_tables():
 async def init_database():
     """Initialize database with default data"""
     from .models.special_education_models import DisabilityType
-    from sqlalchemy import text
     
     async with get_db_session() as session:
         # Check if disability types already exist

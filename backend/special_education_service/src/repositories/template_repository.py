@@ -1,10 +1,9 @@
 """Repository layer for Template operations"""
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, and_, or_, desc
-from sqlalchemy.orm import selectinload, joinedload
-from datetime import datetime
+from sqlalchemy import select, update, and_
+from sqlalchemy.orm import selectinload
 
 from ..models.special_education_models import (
     IEPTemplate, DisabilityType

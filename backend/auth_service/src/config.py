@@ -1,8 +1,9 @@
 """Configuration settings for the Authentication Service."""
 
-from typing import List
+from typing import List, Union
 from functools import lru_cache
-from pydantic import Field
+import json
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class AuthSettings(BaseSettings):
@@ -11,9 +12,11 @@ class AuthSettings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
-        extra="ignore",
-        env_prefix="AUTH_"
+        extra="ignore"
     )
+    
+    # Environment
+    environment: str = Field(default="development", env="ENVIRONMENT")
     
     # Database
     database_url: str = Field(env="DATABASE_URL")
@@ -25,9 +28,18 @@ class AuthSettings(BaseSettings):
     refresh_token_expire_days: int = Field(default=7)
     
     # CORS Settings
-    cors_origins: List[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8000"],
+    cors_origins: Union[str, List[str]] = Field(
+        default="http://localhost:3000,http://localhost:8000",
         env="CORS_ORIGINS"
+    )
+    cors_allow_credentials: bool = Field(default=True, env="CORS_ALLOW_CREDENTIALS")
+    cors_allow_methods: Union[str, List[str]] = Field(
+        default="GET,POST,PUT,DELETE,PATCH,OPTIONS",
+        env="CORS_ALLOW_METHODS"
+    )
+    cors_allow_headers: Union[str, List[str]] = Field(
+        default="*",
+        env="CORS_ALLOW_HEADERS"
     )
     
     # Rate Limiting
@@ -48,12 +60,60 @@ class AuthSettings(BaseSettings):
     max_sessions_per_user: int = Field(default=5)
     session_cleanup_interval_hours: int = Field(default=24)
     
+    @field_validator('cors_origins', mode='before')
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """Parse CORS origins from various formats"""
+        if isinstance(v, str):
+            # Try to parse as JSON array first
+            if v.strip().startswith('[') and v.strip().endswith(']'):
+                try:
+                    return json.loads(v)
+                except json.JSONDecodeError:
+                    pass
+            # Parse as comma-separated string
+            return [origin.strip() for origin in v.split(',') if origin.strip()]
+        elif isinstance(v, list):
+            return v
+        else:
+            return [str(v)]
+    
+    @field_validator('cors_allow_methods', mode='before')
+    @classmethod
+    def parse_cors_methods(cls, v):
+        """Parse CORS methods from string or list"""
+        if isinstance(v, str):
+            return [method.strip().upper() for method in v.split(',') if method.strip()]
+        elif isinstance(v, list):
+            return [method.upper() for method in v]
+        return [str(v).upper()]
+    
+    @field_validator('cors_allow_headers', mode='before')
+    @classmethod
+    def parse_cors_headers(cls, v):
+        """Parse CORS headers from string or list"""
+        if isinstance(v, str):
+            if v.strip() == '*':
+                return ['*']
+            return [header.strip() for header in v.split(',') if header.strip()]
+        elif isinstance(v, list):
+            return v
+        return [str(v)]
+    
     @property
     def cors_origins_list(self) -> List[str]:
-        """Parse CORS origins from string if needed."""
-        if isinstance(self.cors_origins, str):
-            return [origin.strip() for origin in self.cors_origins.split(",")]
-        return self.cors_origins
+        """Get CORS origins as list (backward compatibility)"""
+        return self.cors_origins if isinstance(self.cors_origins, list) else self.cors_origins
+    
+    @property
+    def cors_methods_list(self) -> List[str]:
+        """Get CORS methods as list"""
+        return self.cors_allow_methods if isinstance(self.cors_allow_methods, list) else self.cors_allow_methods
+    
+    @property
+    def cors_headers_list(self) -> List[str]:
+        """Get CORS headers as list"""
+        return self.cors_allow_headers if isinstance(self.cors_allow_headers, list) else self.cors_allow_headers
     
     @property
     def is_production(self) -> bool:

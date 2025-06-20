@@ -3,7 +3,6 @@
 Database migration runner script for the Auth Service.
 """
 
-import asyncio
 import sys
 import os
 from alembic import command

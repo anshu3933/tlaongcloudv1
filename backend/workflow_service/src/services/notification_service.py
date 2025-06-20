@@ -1,7 +1,6 @@
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from uuid import UUID
-from datetime import datetime, timedelta
-import asyncio
+from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import aiosmtplib

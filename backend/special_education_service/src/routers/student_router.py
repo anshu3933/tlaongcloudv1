@@ -10,8 +10,7 @@ from ..database import get_db
 from ..repositories.student_repository import StudentRepository
 from ..services.user_adapter import UserAdapter
 from ..schemas.student_schemas import (
-    StudentCreate, StudentUpdate, StudentResponse, StudentSearch,
-    StudentCaseloadSummary
+    StudentCreate, StudentUpdate, StudentResponse, StudentCaseloadSummary
 )
 from ..schemas.common_schemas import PaginatedResponse, SuccessResponse
 from common.src.config import get_settings
@@ -349,7 +348,7 @@ async def set_active_iep(
         )
     
     return SuccessResponse(
-        message=f"Active IEP updated successfully",
+        message="Active IEP updated successfully",
         data={
             "student_id": str(student_id),
             "active_iep_id": str(iep_id)

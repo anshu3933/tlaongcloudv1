@@ -9,6 +9,7 @@ from .database import get_db
 from .security import verify_token
 from .repositories.user_repository import UserRepository
 from .repositories.audit_repository import AuditRepository
+from .repositories.token_blacklist_repository import TokenBlacklistRepository
 from .models.user import User
 
 # Security scheme
@@ -151,6 +152,10 @@ async def get_user_repository(db: AsyncSession = Depends(get_db)) -> UserReposit
 async def get_audit_repository(db: AsyncSession = Depends(get_db)) -> AuditRepository:
     """Get audit repository instance."""
     return AuditRepository(db)
+
+async def get_token_blacklist_repository(db: AsyncSession = Depends(get_db)) -> TokenBlacklistRepository:
+    """Get token blacklist repository instance."""
+    return TokenBlacklistRepository(db)
 
 def get_client_ip(request: Request) -> str:
     """Extract client IP address from request."""

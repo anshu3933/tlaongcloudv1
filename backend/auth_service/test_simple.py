@@ -3,15 +3,14 @@
 
 import os
 import sys
-import json
 from datetime import datetime, timedelta
 
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 # Set required environment variables for testing
-os.environ['AUTH_JWT_SECRET_KEY'] = 'test-secret-key-for-testing-only'
-os.environ['AUTH_DATABASE_URL'] = 'postgresql+asyncpg://test:test@localhost:5432/test_db'
+os.environ['AUTH_JWT_SECRET_KEY'] = 'test-jwt-secret-key-for-testing-only-32-chars'
+os.environ['AUTH_DATABASE_URL'] = os.getenv('TEST_DATABASE_URL', 'sqlite+aiosqlite:///./test_auth.db')
 os.environ['AUTH_ENVIRONMENT'] = 'testing'
 
 def test_basic_security():

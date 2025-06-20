@@ -10,11 +10,11 @@ from ..repositories.iep_repository import IEPRepository
 from ..repositories.student_repository import StudentRepository
 from ..services.user_adapter import UserAdapter
 from ..schemas.iep_schemas import (
-    IEPCreate, IEPUpdate, IEPResponse, IEPSearch, IEPSubmitForApproval,
-    IEPGenerateSection, IEPVersionHistory, GoalProgressUpdate,
+    IEPCreate, IEPUpdate, IEPResponse, IEPSubmitForApproval,
+    IEPVersionHistory, GoalProgressUpdate,
     IEPGoalCreate, IEPGoalResponse
 )
-from ..schemas.common_schemas import PaginatedResponse, SuccessResponse
+from ..schemas.common_schemas import SuccessResponse
 from common.src.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -305,7 +305,7 @@ async def update_goal_progress(
         )
     
     return SuccessResponse(
-        message=f"Goal progress updated successfully",
+        message="Goal progress updated successfully",
         data={
             "goal_id": str(goal_id),
             "new_status": progress_update.progress_status.value

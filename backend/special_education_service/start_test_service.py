@@ -1,7 +1,6 @@
 """Start the Special Education Service for testing"""
 import os
 import sys
-import asyncio
 from pathlib import Path
 
 # Add the project root to Python path

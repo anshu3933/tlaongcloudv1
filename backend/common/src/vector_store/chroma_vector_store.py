@@ -1,6 +1,5 @@
 """ChromaDB vector store implementation for development"""
-import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import chromadb
 from chromadb.config import Settings
 

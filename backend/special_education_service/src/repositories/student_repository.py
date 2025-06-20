@@ -1,12 +1,12 @@
 """Repository layer for Student operations"""
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, and_, or_, desc, func
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy import select, update, and_, or_, func
+from sqlalchemy.orm import selectinload
 from datetime import datetime, date
 
-from ..models.special_education_models import Student, IEP, PresentLevel
+from ..models.special_education_models import Student, IEP
 
 class StudentRepository:
     def __init__(self, session: AsyncSession):

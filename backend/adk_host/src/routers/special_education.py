@@ -1,14 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
-from typing import List, Optional, Dict, Any
+from typing import Optional
 from uuid import UUID
-from datetime import date, datetime
 
 from ..middleware.auth import get_current_user, require_role
-from ..dependencies import get_iep_service, get_pl_service, get_approval_service
+from ..dependencies import get_iep_service, get_approval_service
 from common.src.models.special_education import (
-    IEPCreate, IEPUpdate, IEPResponse, 
-    PLAssessmentCreate, PLAssessmentResponse,
-    IEPGoalCreate, IEPGoalResponse
+    IEPCreate, IEPResponse
 )
 
 router = APIRouter(prefix="/api/v1/special-education", tags=["special-education"])
@@ -37,7 +34,7 @@ async def create_iep(
         return IEPResponse(**iep)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Failed to create IEP")
 
 @router.get("/ieps/{iep_id}", response_model=IEPResponse)

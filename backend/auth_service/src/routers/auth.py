@@ -1,22 +1,23 @@
 """Authentication routes for login, registration, token management."""
 
-from datetime import datetime, timedelta
-from typing import Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from ..dependencies import get_audit_repository, get_user_repository, get_client_ip
+from ..dependencies.auth import get_current_user, get_optional_current_user
 from ..repositories.user_repository import UserRepository
 from ..repositories.audit_repository import AuditRepository
 from ..models.user import User
 from ..security import (
     hash_password, verify_password, create_access_token, create_refresh_token,
-    verify_token, generate_token_hash, PasswordValidator
+    verify_token, PasswordValidator
 )
 from ..schemas import (
     UserCreate, UserLogin, UserResponse, Token, TokenRefresh, 
-    SuccessResponse, SessionCleanupResponse, ErrorResponse
+    SuccessResponse, SessionCleanupResponse
 )
 from ..config import get_auth_settings
 import logging
@@ -190,7 +191,7 @@ async def login(
         )
         
         refresh_token = create_refresh_token(user.id)
-        refresh_expires_at = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
+        refresh_expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
         
         # Store refresh token session
         await user_repo.create_session(
@@ -352,7 +353,7 @@ async def refresh_token(
 @router.post("/logout", response_model=SuccessResponse)
 async def logout(
     request: Request,
-    current_user: User = Depends(lambda: None),  # Will be implemented with proper auth dependency
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     user_repo: UserRepository = Depends(get_user_repository),
     audit_repo: AuditRepository = Depends(get_audit_repository)
@@ -364,51 +365,23 @@ async def logout(
     """
     client_ip = get_client_ip(request)
     
-    # For now, extract user from Authorization header manually
-    # This will be replaced with proper dependency injection
-    from fastapi.security import HTTPBearer
-    from ..dependencies import get_current_user
-    
     try:
-        # Get current user (temporary implementation)
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authorization header missing"
-            )
-        
-        token = auth_header.split(" ")[1]
-        payload = verify_token(token, token_type="access")
-        if not payload:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-        
-        user_id = int(payload.get("sub"))
-        user = await user_repo.get_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found"
-            )
         
         # Delete all user sessions
-        deleted_count = await user_repo.delete_all_user_sessions(user.id)
+        deleted_count = await user_repo.delete_all_user_sessions(current_user.id)
         
         # Log logout
         await audit_repo.log_action(
             entity_type="user",
-            entity_id=user.id,
+            entity_id=current_user.id,
             action="logout",
-            user_id=user.id,
-            user_role=user.role,
+            user_id=current_user.id,
+            user_role=current_user.role,
             ip_address=client_ip,
             details={"sessions_cleared": deleted_count}
         )
         
-        logger.info(f"User logged out: {user.email}, sessions cleared: {deleted_count}")
+        logger.info(f"User logged out: {current_user.email}, sessions cleared: {deleted_count}")
         
         return SuccessResponse(
             message="Successfully logged out",
@@ -426,50 +399,14 @@ async def logout(
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user_repo: UserRepository = Depends(get_user_repository)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get current user profile information.
     
     Requires valid JWT token in Authorization header.
     """
-    try:
-        # Get current user (temporary implementation)
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authorization header missing"
-            )
-        
-        token = auth_header.split(" ")[1]
-        payload = verify_token(token, token_type="access")
-        if not payload:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-        
-        user_id = int(payload.get("sub"))
-        user = await user_repo.get_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        return UserResponse.from_orm(user)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Get current user error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
+    return UserResponse.from_orm(current_user)
 
 @router.post("/cleanup-sessions", response_model=SessionCleanupResponse)
 async def cleanup_expired_sessions(
