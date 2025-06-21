@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from ..dependencies import get_audit_repository, get_user_repository, get_client_ip
-from ..dependencies.auth import get_current_user, get_optional_current_user
+from ..dependencies import get_current_user, get_optional_current_user
 from ..repositories.user_repository import UserRepository
 from ..repositories.audit_repository import AuditRepository
 from ..models.user import User

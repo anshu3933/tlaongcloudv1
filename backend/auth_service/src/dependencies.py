@@ -74,6 +74,34 @@ async def get_current_active_user(
     """Get current active user (alias for clarity)."""
     return current_user
 
+async def get_optional_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """Get the current user if token is present, otherwise return None."""
+    if not credentials:
+        return None
+    
+    try:
+        token = credentials.credentials
+        payload = verify_token(token, token_type="access")
+        
+        if not payload:
+            return None
+        
+        user_id = int(payload.get("sub"))
+        user_repo = UserRepository(db)
+        user = await user_repo.get_by_id(user_id)
+        
+        if user and user.is_active:
+            return user
+        
+    except Exception:
+        # Silently fail for optional authentication
+        pass
+    
+    return None
+
 def require_role(required_role: str):
     """Dependency factory for role-based access control."""
     async def check_role(
