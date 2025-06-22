@@ -27,10 +27,27 @@ user_adapter = UserAdapter(
     cache_ttl_seconds=300
 )
 
-vector_store = VectorStore(
-    project_id=getattr(settings, 'gcp_project_id', 'default-project'),
-    collection_name="rag_documents"
-)
+# Initialize vector store based on environment
+import os
+if os.getenv("ENVIRONMENT") == "development":
+    # Development: Use ChromaDB with collection_name
+    vector_store = VectorStore(
+        project_id=getattr(settings, 'gcp_project_id', 'default-project'),
+        collection_name="rag_documents"
+    )
+else:
+    # Production: Use VertexVectorStore with proper factory method
+    try:
+        from common.src.vector_store.vertex_vector_store import VertexVectorStore
+        vector_store = VertexVectorStore.from_settings(settings)
+    except (ValueError, AttributeError) as e:
+        # Fallback to ChromaDB if Vertex is not configured
+        print(f"Warning: Vertex AI not configured ({e}), falling back to ChromaDB")
+        from common.src.vector_store.chroma_vector_store import VectorStore as ChromaVectorStore
+        vector_store = ChromaVectorStore(
+            project_id=getattr(settings, 'gcp_project_id', 'default-project'),
+            collection_name="rag_documents"
+        )
 
 iep_generator = IEPGenerator(vector_store=vector_store, settings=settings)
 

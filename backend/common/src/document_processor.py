@@ -104,16 +104,18 @@ class DocumentProcessor:
                     log_debug(traceback.format_exc())
                     continue
                 for i, chunk_text in enumerate(doc_chunks):
+                    # Merge metadata but ensure source is always the blob name
+                    metadata = {
+                        **doc.metadata,
+                        "source": blob_name,
+                        "chunk_index": i,
+                        "total_chunks": len(doc_chunks),
+                        "document_name": Path(blob_name).name,
+                        "page": doc.metadata.get("page", 0)
+                    }
                     chunk = {
                         "content": chunk_text,
-                        "metadata": {
-                            "source": blob_name,
-                            "chunk_index": i,
-                            "total_chunks": len(doc_chunks),
-                            "document_name": Path(blob_name).name,
-                            "page": doc.metadata.get("page", 0),
-                            **doc.metadata
-                        }
+                        "metadata": metadata
                     }
                     chunks.append(chunk)
         except Exception as e:

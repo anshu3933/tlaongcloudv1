@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from typing import Dict, Any, Optional
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel, Field
 
@@ -30,11 +31,26 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown logic"""
     global vector_store, embedding_model, document_processor
     
-    # Initialize components
-    vector_store = VectorStore(
-        project_id=settings.gcp_project_id,
-        collection_name="rag_documents"
-    )
+    # Initialize vector store based on environment
+    if os.getenv("ENVIRONMENT") == "development":
+        # Development: Use ChromaDB with collection_name
+        vector_store = VectorStore(
+            project_id=settings.gcp_project_id,
+            collection_name="rag_documents"
+        )
+    else:
+        # Production: Use VertexVectorStore with proper factory method
+        try:
+            from common.src.vector_store.vertex_vector_store import VertexVectorStore
+            vector_store = VertexVectorStore.from_settings(settings)
+        except (ValueError, AttributeError) as e:
+            # Fallback to ChromaDB if Vertex is not configured
+            print(f"Warning: Vertex AI not configured ({e}), falling back to ChromaDB")
+            from common.src.vector_store.chroma_vector_store import VectorStore as ChromaVectorStore
+            vector_store = ChromaVectorStore(
+                project_id=settings.gcp_project_id,
+                collection_name="rag_documents"
+            )
     
     # Initialize embedding model if available
     if TextEmbeddingModel:
@@ -185,10 +201,17 @@ async def retrieve_documents_impl(
     # Format results
     formatted_docs = []
     for doc in documents:
+        # Extract proper source name
+        doc_name = doc["metadata"].get("document_name")
+        source_path = doc["metadata"].get("source", "unknown")
+        final_source = doc_name if doc_name else Path(source_path).name
+        
+        print(f"DEBUG: doc_name={doc_name}, source_path={source_path}, final_source={final_source}")
+        
         formatted_docs.append({
             "id": doc["id"],
             "content": doc["content"],
-            "source": doc["metadata"].get("source", "unknown"),
+            "source": final_source,
             "score": doc["score"],
             "metadata": doc["metadata"]
         })
@@ -332,6 +355,18 @@ async def list_documents():
     return {
         "documents": documents,
         "count": len(documents)
+    }
+
+@app.post("/documents/clear")
+async def clear_vector_store():
+    """Clear all documents from vector store"""
+    if not vector_store:
+        raise HTTPException(status_code=500, detail="Vector store not initialized")
+    
+    vector_store.clear()
+    return {
+        "status": "success",
+        "message": "Vector store cleared successfully"
     }
 
 if __name__ == "__main__":

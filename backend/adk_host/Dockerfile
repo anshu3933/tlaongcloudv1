@@ -15,7 +15,8 @@ COPY backend/requirements.txt .
 COPY backend/adk_host/src /app/adk_host/src
 
 # Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir email-validator==2.1.0.post1
 
 # Run the server
 CMD ["uvicorn", "adk_host.src.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"] 

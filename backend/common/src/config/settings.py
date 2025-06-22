@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-004")
     gemini_model: str = Field(env="GEMINI_MODEL")
     gemini_temperature: float = Field(default=0.4, ge=0.0, le=2.0)
-    gemini_max_tokens: int = Field(default=65536, ge=1, le=65536)
+    gemini_max_tokens: int = Field(default=8192, ge=1, le=8192)
     
     # Cache Configuration
     cache_ttl_embeddings: int = Field(default=86400)

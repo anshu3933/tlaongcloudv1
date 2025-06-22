@@ -25,7 +25,8 @@ COPY backend/common /app/common
 
 # Copy service requirements and install dependencies
 COPY backend/auth_service/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir email-validator==2.1.0.post1
 
 # Copy service code
 COPY backend/auth_service/src /app/src

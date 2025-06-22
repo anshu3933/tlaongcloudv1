@@ -16,7 +16,8 @@ COPY backend/special_education_service/requirements.txt .
 COPY backend/special_education_service/src /app/src
 
 # Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir sqlalchemy==2.0.25 asyncpg==0.29.0 email-validator==2.1.0.post1 backoff==2.2.1 "numpy<2.0" chromadb==0.4.22
 
 # Create directory for GCP credentials
 RUN mkdir -p /app/credentials

@@ -191,8 +191,9 @@ async def generate_rag_response(
     # Format context from documents
     context_parts = []
     for i, doc in enumerate(documents, 1):
+        doc_source = doc.get('metadata', {}).get('document_name') or doc.get('source', 'Unknown')
         context_parts.append(
-            f"[Document {i} - Source: {doc.get('source', 'Unknown')}]\n"
+            f"[Document {i} - Source: {doc_source}]\n"
             f"{doc['content']}\n"
         )
     
@@ -264,8 +265,9 @@ Answer:"""
     except Exception as e:
         print(f"Gemini generation error: {str(e)}")
         # Fallback to a simple response
+        doc_source = documents[0].get('metadata', {}).get('document_name') or documents[0].get('source', 'unknown source')
         return f"I found {len(documents)} relevant documents about '{query}'. " \
-               f"The most relevant information comes from: {documents[0].get('source', 'unknown source')}."
+               f"The most relevant information comes from: {doc_source}."
 
 @app.post("/api/v1/query", response_model=QueryResponse)
 async def process_query(request: Request, query_request: QueryRequest):
@@ -323,9 +325,10 @@ async def process_query(request: Request, query_request: QueryRequest):
         # Format sources for frontend
         sources = []
         for doc in documents[:5]:  # Limit to top 5 sources
+            doc_source = doc.get("metadata", {}).get("document_name") or doc.get("source", "Unknown")
             sources.append(Source(
                 id=doc["id"],
-                source=doc.get("source", "Unknown"),
+                source=doc_source,
                 score=round(doc.get("score", 0), 3),
                 snippet=doc["content"][:200] + "..." if len(doc["content"]) > 200 else doc["content"],
                 metadata=doc.get("metadata", {})
