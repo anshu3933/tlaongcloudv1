@@ -125,6 +125,9 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-credentials.json
     volumes:
       - ~/.config/gcloud/application_default_credentials.json:/app/gcp-credentials.json:ro
+      - ./backend/mcp_server/src:/app/mcp_server/src:ro
+      - ./backend/common:/app/common:ro
+      - uploaded_documents:/app/uploaded_documents
     depends_on:
       redis:
         condition: service_healthy
@@ -150,6 +153,9 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
     volumes:
       - ${GOOGLE_APPLICATION_CREDENTIALS}:${GOOGLE_APPLICATION_CREDENTIALS}:ro
+      - ./backend/adk_host/src:/app/adk_host/src:ro
+      - ./backend/common:/app/common:ro
+      - uploaded_documents:/app/uploaded_documents
     depends_on:
       mcp-server:
         condition: service_started
@@ -164,4 +170,5 @@ services:
 
 volumes:
   postgres_data:
-  chroma_db: 
+  chroma_db:
+  uploaded_documents: 

@@ -182,7 +182,8 @@ class MCPResponse(BaseModel):
 async def retrieve_documents_impl(
     query: str, 
     top_k: int = 5, 
-    filters: Dict = None
+    filters: Dict = None,
+    context_mode: str = "chat_only"
 ) -> Dict[str, Any]:
     """Retrieve relevant documents using vector search"""
     if not vector_store or not embedding_model:
@@ -191,12 +192,43 @@ async def retrieve_documents_impl(
     # Create query embedding
     query_embedding = embedding_model.get_embeddings([query])[0].values
     
+    # Process filters for document_ids and context mode
+    search_filters = None
+    filter_conditions = []
+    
+    if filters and "document_ids" in filters and filters["document_ids"]:
+        # Convert document_ids filter to ChromaDB format
+        filter_conditions.append({
+            "document_id": {"$in": filters["document_ids"]}
+        })
+        print(f"Filtering vector search by document IDs: {filters['document_ids']}")
+    
+    # Handle context mode filtering
+    if context_mode == "chat_only":
+        # Only include documents uploaded through chat interface
+        filter_conditions.append({
+            "source_type": {"$eq": "chat"}
+        })
+        print("Context mode: chat_only - filtering by source_type='chat'")
+    elif context_mode == "include_historical":
+        # Include all documents - both chat and historical (no source_type filter)
+        print("Context mode: include_historical - including all documents (chat + historical)")
+    
+    # Combine filters if we have any
+    if filter_conditions:
+        if len(filter_conditions) == 1:
+            search_filters = filter_conditions[0]
+        else:
+            search_filters = {"$and": filter_conditions}
+    
     # Search vector store
+    print(f"DEBUG: MCP calling vector store search with filters: {search_filters}")
     documents = vector_store.search(
         query_embedding=query_embedding,
         top_k=top_k,
-        filters=filters
+        filters=search_filters
     )
+    print(f"DEBUG: MCP received {len(documents)} documents from vector store")
     
     # Format results
     formatted_docs = []
@@ -368,6 +400,157 @@ async def clear_vector_store():
         "status": "success",
         "message": "Vector store cleared successfully"
     }
+
+@app.get("/documents/debug")
+async def debug_vector_store():
+    """Debug endpoint to check vector store contents"""
+    if not vector_store:
+        raise HTTPException(status_code=500, detail="Vector store not initialized")
+    
+    try:
+        # Get all documents from ChromaDB
+        all_data = vector_store.collection.get()
+        
+        return {
+            "total_documents": len(all_data['ids']) if all_data['ids'] else 0,
+            "document_ids": all_data['ids'][:10] if all_data['ids'] else [],  # First 10 IDs
+            "sample_metadata": all_data['metadatas'][:3] if all_data['metadatas'] else [],  # First 3 metadata
+            "collection_name": vector_store.collection_name
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "total_documents": 0
+        }
+
+@app.post("/documents/seed-historical")
+async def seed_historical_documents():
+    """Seed some sample historical documents for testing"""
+    if not vector_store or not document_processor:
+        raise HTTPException(status_code=500, detail="Services not initialized")
+    
+    # Sample historical documents
+    historical_docs = [
+        {
+            "id": "hist_doc_1",
+            "content": "Sample IEP document from the historical archive. This document contains information about reading comprehension goals, math objectives, and social skills development for students with learning disabilities.",
+            "metadata": {
+                "document_id": "hist_doc_1",
+                "source": "gcs://historical-bucket/iep-samples/reading-goals.pdf",
+                "document_name": "Reading Goals IEP Template",
+                "source_type": "historical",
+                "document_type": "iep_template",
+                "subject": "reading",
+                "grade_level": "elementary"
+            }
+        },
+        {
+            "id": "hist_doc_2", 
+            "content": "Historical lesson plan template for mathematics instruction. Includes scaffolding strategies, differentiated instruction methods, and assessment rubrics for students with special needs.",
+            "metadata": {
+                "document_id": "hist_doc_2",
+                "source": "gcs://historical-bucket/lesson-plans/math-template.pdf",
+                "document_name": "Math Lesson Plan Template",
+                "source_type": "historical",
+                "document_type": "lesson_plan",
+                "subject": "mathematics",
+                "grade_level": "middle"
+            }
+        },
+        {
+            "id": "hist_doc_3",
+            "content": "Behavioral intervention strategies and positive behavior support plans. This document outlines evidence-based practices for managing classroom behavior and supporting students with emotional and behavioral needs.",
+            "metadata": {
+                "document_id": "hist_doc_3", 
+                "source": "gcs://historical-bucket/behavior/intervention-strategies.pdf",
+                "document_name": "Behavioral Intervention Strategies",
+                "source_type": "historical",
+                "document_type": "behavior_plan",
+                "subject": "behavior",
+                "grade_level": "all"
+            }
+        }
+    ]
+    
+    try:
+        chunks = []
+        for doc in historical_docs:
+            # Create embeddings for the content
+            embeddings = document_processor.create_embeddings([doc["content"]])
+            
+            chunk = {
+                "content": doc["content"],
+                "metadata": doc["metadata"],
+                "embedding": embeddings[0]
+            }
+            chunks.append(chunk)
+        
+        # Add to vector store
+        vector_store.add_documents(chunks)
+        
+        return {
+            "status": "success",
+            "message": f"Added {len(historical_docs)} historical documents to vector store",
+            "documents_added": len(historical_docs)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to seed historical documents: {str(e)}")
+
+from pydantic import BaseModel as PydanticBaseModel
+
+class ProcessSingleDocumentRequest(PydanticBaseModel):
+    file_path: str
+    document_id: str
+    filename: str
+
+@app.post("/documents/process-single")
+async def process_single_document(request: ProcessSingleDocumentRequest):
+    """Process a single uploaded document and add to vector store"""
+    if not document_processor or not vector_store:
+        raise HTTPException(status_code=500, detail="Services not initialized")
+    
+    try:
+        # Load and process the document
+        documents = document_processor.load_document(request.file_path)
+        chunks = []
+        
+        for doc in documents:
+            doc_chunks = document_processor.text_splitter.split_text(doc.page_content)
+            
+            for i, chunk_text in enumerate(doc_chunks):
+                chunk = {
+                    "content": chunk_text,
+                    "metadata": {
+                        "document_id": request.document_id,  # Add document ID for filtering
+                        "source": request.file_path,
+                        "document_name": request.filename,
+                        "chunk_index": i,
+                        "total_chunks": len(doc_chunks),
+                        "page": doc.metadata.get("page", 0),
+                        "source_type": "chat"  # Mark as chat document
+                    }
+                }
+                chunks.append(chunk)
+        
+        # Create embeddings and add to vector store
+        if chunks:
+            chunk_texts = [chunk["content"] for chunk in chunks]
+            embeddings = document_processor.create_embeddings(chunk_texts)
+            
+            for chunk, embedding in zip(chunks, embeddings):
+                chunk["embedding"] = embedding
+            
+            vector_store.add_documents(chunks)
+        
+        return {
+            "status": "success",
+            "document_id": request.document_id,
+            "chunks_created": len(chunks)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

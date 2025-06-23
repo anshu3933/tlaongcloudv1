@@ -23,11 +23,18 @@ class VectorStore:
         if not chunks:
             return
         
-        # Prepare data
-        ids = [f"chunk_{i}" for i in range(len(chunks))]
+        # Prepare data - use document_id + chunk_index for better tracking
+        ids = []
         embeddings = [chunk["embedding"] for chunk in chunks]
         metadatas = [chunk["metadata"] for chunk in chunks]
         documents = [chunk["content"] for chunk in chunks]
+        
+        # Create meaningful chunk IDs based on document_id and chunk_index
+        for i, chunk in enumerate(chunks):
+            doc_id = chunk["metadata"].get("document_id", f"unknown_{i}")
+            chunk_idx = chunk["metadata"].get("chunk_index", i)
+            chunk_id = f"{doc_id}_chunk_{chunk_idx}"
+            ids.append(chunk_id)
         
         # Add to ChromaDB
         self.collection.add(
@@ -44,9 +51,30 @@ class VectorStore:
         where_clause = None
         if filters:
             # Convert filters to ChromaDB format
-            where_clause = {"$and": [
-                {key: {"$eq": value}} for key, value in filters.items()
-            ]}
+            # Handle special cases like $in operator and complex nested filters
+            
+            def convert_filter(filter_dict):
+                """Convert a filter dictionary to ChromaDB format"""
+                if not isinstance(filter_dict, dict):
+                    return filter_dict
+                
+                converted = {}
+                for key, value in filter_dict.items():
+                    if key in ["$and", "$or"]:
+                        # Handle logical operators
+                        converted[key] = [convert_filter(f) for f in value]
+                    elif isinstance(value, dict):
+                        # Handle nested operators like {"$in": [...]} or {"$eq": ...}
+                        converted[key] = value
+                    else:
+                        # Simple equality
+                        converted[key] = {"$eq": value}
+                return converted
+            
+            where_clause = convert_filter(filters)
+        
+        print(f"DEBUG: Vector store search with filters: {filters}")
+        print(f"DEBUG: Converted where_clause: {where_clause}")
         
         results = self.collection.query(
             query_embeddings=[query_embedding],
@@ -54,6 +82,8 @@ class VectorStore:
             where=where_clause if where_clause else None,
             include=["metadatas", "documents", "distances"]
         )
+        
+        print(f"DEBUG: Vector store found {len(results['ids'][0])} results")
         
         # Format results
         documents = []

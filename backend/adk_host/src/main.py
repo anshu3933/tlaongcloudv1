@@ -23,7 +23,7 @@ http_client: Optional[httpx.AsyncClient] = None
 gemini_model: Optional[GenerativeModel] = None
 
 # Document storage directory
-DOCUMENTS_DIR = Path("./uploaded_documents")
+DOCUMENTS_DIR = Path("/app/uploaded_documents")
 DOCUMENTS_DIR.mkdir(exist_ok=True)
 
 # In-memory document registry (in production, use database)
@@ -85,6 +85,19 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Request-ID"],
 )
+
+@app.on_event("startup")
+async def clear_document_cache():
+    """Clear document cache on startup"""
+    global document_registry
+    document_registry.clear()
+    
+    # Clear uploaded documents directory
+    import shutil
+    if DOCUMENTS_DIR.exists():
+        shutil.rmtree(DOCUMENTS_DIR)
+    DOCUMENTS_DIR.mkdir(exist_ok=True)
+    print("Cleared document cache and uploaded files on startup")
 
 # Request/Response models
 class QueryRequest(BaseModel):
@@ -190,14 +203,19 @@ async def generate_rag_response(
     
     # Format context from documents
     context_parts = []
+    print(f"DEBUG: Formatting context from {len(documents)} documents")
     for i, doc in enumerate(documents, 1):
         doc_source = doc.get('metadata', {}).get('document_name') or doc.get('source', 'Unknown')
+        doc_content = doc['content'][:500]  # Limit for debugging
+        print(f"DEBUG: Document {i} - Source: {doc_source}, Content length: {len(doc['content'])}")
+        print(f"DEBUG: Document {i} preview: {doc_content}...")
         context_parts.append(
             f"[Document {i} - Source: {doc_source}]\n"
             f"{doc['content']}\n"
         )
     
     context_str = "\n".join(context_parts)
+    print(f"DEBUG: Total context length: {len(context_str)} characters")
     
     # Construct prompt for Gemini
     prompt = f"""You are an educational assistant helping teachers with IEPs, lesson planning, and student support.
@@ -279,29 +297,125 @@ async def process_query(request: Request, query_request: QueryRequest):
     print(f"Processing query: '{query_request.query}' (request_id: {request_id})")
     
     try:
-        # Try to call MCP to retrieve relevant documents, but fallback if MCP is not available
+        # Handle context modes: chat_only vs include_historical
         documents = []
-        try:
-            retrieval_result = await call_mcp_tool(
-                "retrieve_documents",
-                {
-                    "query": query_request.query,
-                    "top_k": query_request.options.get("top_k", 5),
-                    "filters": query_request.options.get("filters", {})
-                },
-                request_id
-            )
-            documents = retrieval_result.get("documents", [])
-        except Exception as e:
-            print(f"MCP server not available, proceeding without document retrieval: {e}")
-            # Create a mock document for testing
-            documents = [{
-                "id": "mock-doc-1",
-                "content": f"This is a mock response for the query: {query_request.query}. The system is working but no external documents are available.",
-                "source": "System Mock",
-                "score": 0.8,
-                "metadata": {"type": "mock"}
-            }]
+        selected_documents = query_request.options.get("documents", [])
+        context_mode = query_request.options.get("context_mode", "chat_only")
+        
+        print(f"DEBUG: Query options: {query_request.options}")
+        print(f"DEBUG: Selected documents from frontend: {selected_documents}")
+        print(f"DEBUG: Context mode: {context_mode}")
+        
+        if context_mode == "chat_only":
+            # CHAT ONLY MODE: Use only frontend-selected documents from uploaded files
+            print("=== CHAT ONLY MODE ===")
+            if selected_documents:
+                print(f"Frontend provided {len(selected_documents)} document IDs for context")
+                # Create document objects from the frontend selection with actual content
+                for i, doc_id in enumerate(selected_documents):
+                    # Get document info from registry
+                    if doc_id in document_registry:
+                        doc_info = document_registry[doc_id]
+                        
+                        # Try to read actual document content
+                        try:
+                            file_path = DOCUMENTS_DIR / f"{doc_id}_{doc_info.filename}"
+                            if file_path.exists():
+                                # Read the file content
+                                with open(file_path, 'rb') as f:
+                                    content = f.read()
+                                
+                                # Try to decode as text (for simple text files)
+                                try:
+                                    text_content = content.decode('utf-8')[:2000]  # First 2000 chars
+                                    print(f"Read {len(text_content)} characters from {doc_info.filename}")
+                                except UnicodeDecodeError:
+                                    text_content = f"Binary file: {doc_info.filename} ({len(content)} bytes). File type: {doc_info.content_type}"
+                                    print(f"Binary file detected: {doc_info.filename}")
+                                
+                                documents.append({
+                                    "id": doc_id,
+                                    "content": text_content,
+                                    "source": doc_info.filename,
+                                    "score": 0.9,
+                                    "metadata": {"document_id": doc_id, "filename": doc_info.filename, "source": "chat_upload"}
+                                })
+                                print(f"Added chat document {doc_info.filename} to context")
+                            else:
+                                print(f"File not found: {file_path}")
+                        except Exception as e:
+                            print(f"Error reading document {doc_info.filename}: {str(e)}")
+                    else:
+                        print(f"Warning: Document ID {doc_id} not found in registry")
+            else:
+                print("No documents selected from frontend - proceeding without document context")
+                
+        elif context_mode == "include_historical":
+            # INCLUDE HISTORICAL MODE: Use MCP server for vector search + frontend selection
+            print("=== INCLUDE HISTORICAL MODE ===")
+            try:
+                # Build filters based on selected documents
+                filters = query_request.options.get("filters", {})
+                
+                # If documents are selected from frontend, prioritize them but also include historical
+                if selected_documents:
+                    filters["document_ids"] = selected_documents
+                    print(f"Prioritizing selected documents: {selected_documents}")
+                else:
+                    print("No specific documents selected - searching all historical documents")
+                
+                # Call MCP server for vector search
+                retrieval_result = await call_mcp_tool(
+                    "retrieve_documents",
+                    {
+                        "query": query_request.query,
+                        "top_k": query_request.options.get("top_k", 5),
+                        "filters": filters,
+                        "context_mode": context_mode
+                    },
+                    request_id
+                )
+                documents = retrieval_result.get("documents", [])
+                print(f"MCP server returned {len(documents)} historical documents")
+                
+                # Also add any chat-uploaded documents that were selected
+                if selected_documents:
+                    chat_docs_added = 0
+                    for doc_id in selected_documents:
+                        if doc_id in document_registry:
+                            doc_info = document_registry[doc_id]
+                            # Check if this document is already in the MCP results
+                            already_included = any(doc.get("id") == doc_id for doc in documents)
+                            if not already_included:
+                                try:
+                                    file_path = DOCUMENTS_DIR / f"{doc_id}_{doc_info.filename}"
+                                    if file_path.exists():
+                                        with open(file_path, 'rb') as f:
+                                            content = f.read()
+                                        try:
+                                            text_content = content.decode('utf-8')[:2000]
+                                        except UnicodeDecodeError:
+                                            text_content = f"Binary file: {doc_info.filename}"
+                                        
+                                        documents.append({
+                                            "id": doc_id,
+                                            "content": text_content,
+                                            "source": doc_info.filename,
+                                            "score": 0.95,  # High score for selected docs
+                                            "metadata": {"document_id": doc_id, "filename": doc_info.filename, "source": "chat_upload_priority"}
+                                        })
+                                        chat_docs_added += 1
+                                        print(f"Added priority chat document: {doc_info.filename}")
+                                except Exception as e:
+                                    print(f"Error adding chat document {doc_info.filename}: {e}")
+                    if chat_docs_added:
+                        print(f"Added {chat_docs_added} additional chat documents to historical results")
+                        
+            except Exception as e:
+                print(f"MCP server error in historical mode: {e}")
+                # Fallback to chat-only behavior
+                print("Falling back to chat-only mode due to MCP error")
+                documents = []
         
         if not documents:
             print(f"No documents found for query: {query_request.query}")
@@ -441,15 +555,18 @@ async def upload_document(file: UploadFile = File(...)):
         
         # Call MCP server to process the document
         try:
-            await call_mcp_tool(
-                "process_document",
-                {
-                    "file_path": str(file_path),
-                    "document_id": doc_id,
-                    "filename": doc_info.filename
-                },
-                f"upload-{doc_id}"
-            )
+            # Use direct HTTP call since this is not an MCP tool
+            if http_client:
+                mcp_response = await http_client.post(
+                    f"{settings.mcp_server_url}/documents/process-single",
+                    json={
+                        "file_path": str(file_path),
+                        "document_id": doc_id,
+                        "filename": doc_info.filename
+                    }
+                )
+                mcp_response.raise_for_status()
+                print(f"Document processed successfully: {doc_id}")
         except Exception as e:
             print(f"Warning: Could not process document with MCP: {e}")
             # Continue anyway - document is uploaded
@@ -500,6 +617,43 @@ async def delete_document(document_id: str):
         print(f"Warning: Could not delete from MCP vector store: {e}")
     
     return {"message": "Document deleted successfully"}
+
+@app.get("/api/v1/documents/debug")
+async def debug_document_registry():
+    """Debug endpoint to check document registry"""
+    return {
+        "document_count": len(document_registry),
+        "documents": list(document_registry.keys()),
+        "registry_details": document_registry,
+        "documents_dir_exists": DOCUMENTS_DIR.exists(),
+        "documents_dir_contents": list(DOCUMENTS_DIR.iterdir()) if DOCUMENTS_DIR.exists() else []
+    }
+
+@app.post("/api/v1/documents/clear-cache")
+async def clear_document_cache_endpoint():
+    """Clear document cache manually"""
+    global document_registry
+    document_registry.clear()
+    
+    # Clear uploaded documents directory contents
+    import shutil
+    import os
+    if DOCUMENTS_DIR.exists():
+        for filename in os.listdir(DOCUMENTS_DIR):
+            file_path = DOCUMENTS_DIR / filename
+            try:
+                if file_path.is_file():
+                    file_path.unlink()
+                elif file_path.is_dir():
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Error deleting {file_path}: {e}")
+    
+    return {
+        "message": "Document cache and uploaded files cleared successfully",
+        "document_count": len(document_registry),
+        "files_remaining": len(list(DOCUMENTS_DIR.iterdir())) if DOCUMENTS_DIR.exists() else 0
+    }
 
 @app.get("/")
 async def root():
