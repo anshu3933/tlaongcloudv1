@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from .database import create_tables, init_database, check_database_connection
-from .routers import iep_router, student_router, template_router
+from .routers import iep_router, student_router, template_router, dashboard_router, observability_router
 from .middleware.error_handler import ErrorHandlerMiddleware, add_request_id_middleware
 from common.src.config import get_settings
 
@@ -60,6 +60,8 @@ app.add_middleware(
 app.include_router(iep_router.router)
 app.include_router(student_router.router)
 app.include_router(template_router.router)
+app.include_router(dashboard_router.router)
+app.include_router(observability_router.router)
 
 # Include advanced features
 from .routers import advanced_iep_router
