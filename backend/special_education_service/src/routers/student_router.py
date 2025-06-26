@@ -378,3 +378,292 @@ async def get_students_needing_review(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve students needing review"
         )
+
+@router.get("/{student_id}/profile")
+async def get_student_profile_bff(
+    student_id: UUID,
+    student_repo: StudentRepository = Depends(get_student_repository)
+):
+    """
+    Complete student profile BFF endpoint with goals, IEP data, activities, and progress metrics
+    """
+    try:
+        # Get basic student data
+        student = await student_repo.get_student(student_id, include_ieps=True)
+        if not student:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Student {student_id} not found"
+            )
+        
+        # Mock data for Phase 2 implementation
+        # In a real implementation, this would come from actual repositories
+        
+        # Generate personalized goals based on student's disability and grade
+        disability_type = student.get("primary_disability_type", "Specific Learning Disability")
+        grade_level = student["grade_level"]
+        student_name = f"{student['first_name']} {student['last_name']}"
+        
+        goals = []
+        
+        # Academic goals based on disability type
+        if "Learning" in disability_type or "SLD" in disability_type:
+            goals.append({
+                "id": f"goal-academic-{student['id'][:8]}",
+                "title": f"Reading Comprehension - Grade {grade_level}",
+                "description": f"{student['first_name']} will read {grade_level} level passages and answer comprehension questions with 80% accuracy",
+                "category": "academic",
+                "target_date": "2024-08-30",
+                "progress_percentage": 72,
+                "status": "active",
+                "milestones": [
+                    {
+                        "id": "milestone-1",
+                        "title": "Baseline reading assessment",
+                        "description": "Establish current reading level",
+                        "target_date": "2024-02-15",
+                        "completed": True,
+                        "completed_date": "2024-02-10"
+                    },
+                    {
+                        "id": "milestone-2",
+                        "title": "Mid-year progress review",
+                        "description": "Reassess reading comprehension skills",
+                        "target_date": "2024-04-15",
+                        "completed": True,
+                        "completed_date": "2024-04-12"
+                    }
+                ],
+                "last_updated": "2024-04-15T10:30:00Z"
+            })
+            
+            goals.append({
+                "id": f"goal-math-{student['id'][:8]}",
+                "title": f"Math Problem Solving - Grade {grade_level}",
+                "description": f"{student['first_name']} will solve multi-step word problems appropriate for {grade_level} with 75% accuracy",
+                "category": "academic",
+                "target_date": "2024-08-30",
+                "progress_percentage": 68,
+                "status": "active",
+                "milestones": [
+                    {
+                        "id": "milestone-3",
+                        "title": "Single-step problems mastery",
+                        "description": "Complete single-step word problems",
+                        "target_date": "2024-03-01",
+                        "completed": True,
+                        "completed_date": "2024-02-28"
+                    }
+                ],
+                "last_updated": "2024-04-10T14:20:00Z"
+            })
+        
+        # Social/Behavioral goals
+        goals.append({
+            "id": f"goal-social-{student['id'][:8]}",
+            "title": "Social Interaction Skills",
+            "description": f"{student['first_name']} will initiate appropriate conversations with peers during structured activities",
+            "category": "social",
+            "target_date": "2024-06-30",
+            "progress_percentage": 85,
+            "status": "active",
+            "milestones": [
+                {
+                    "id": "milestone-4",
+                    "title": "Peer interaction practice",
+                    "description": "Practice conversations with teacher support",
+                    "target_date": "2024-03-15",
+                    "completed": True,
+                    "completed_date": "2024-03-10"
+                }
+            ],
+            "last_updated": "2024-04-20T09:15:00Z"
+        })
+        
+        # Communication goals if applicable
+        if "Speech" in disability_type or "Communication" in disability_type:
+            goals.append({
+                "id": f"goal-comm-{student['id'][:8]}",
+                "title": "Expressive Communication",
+                "description": f"{student['first_name']} will use complete sentences to express needs and wants in 8/10 opportunities",
+                "category": "communication",
+                "target_date": "2024-07-15",
+                "progress_percentage": 78,
+                "status": "active",
+                "milestones": [
+                    {
+                        "id": "milestone-5",
+                        "title": "Sentence structure practice",
+                        "description": "Use subject-verb-object structure",
+                        "target_date": "2024-03-30",
+                        "completed": True,
+                        "completed_date": "2024-03-25"
+                    }
+                ],
+                "last_updated": "2024-04-18T11:45:00Z"
+            })
+        
+        # Mock IEP data
+        iep_data = {
+            "id": "iep-1",
+            "status": "active",
+            "start_date": "2023-09-01",
+            "end_date": "2024-08-31",
+            "review_date": "2024-03-01",
+            "compliance_status": "compliant",
+            "milestones": [
+                {
+                    "id": "iep-milestone-1",
+                    "title": "Annual Review",
+                    "target_date": "2024-03-01",
+                    "status": "completed"
+                },
+                {
+                    "id": "iep-milestone-2",
+                    "title": "Spring Progress Review",
+                    "target_date": "2024-05-15",
+                    "status": "pending"
+                }
+            ],
+            "documents": [
+                {
+                    "id": "doc-1",
+                    "name": "IEP Document 2023-2024",
+                    "type": "IEP",
+                    "upload_date": "2023-09-01",
+                    "file_url": "/documents/iep-2023-2024.pdf"
+                },
+                {
+                    "id": "doc-2",
+                    "name": "Behavioral Assessment",
+                    "type": "Assessment",
+                    "upload_date": "2024-02-15",
+                    "file_url": "/documents/behavior-assessment-2024.pdf"
+                }
+            ],
+            "meetings": [
+                {
+                    "id": "meeting-1",
+                    "type": "annual",
+                    "scheduled_date": "2024-03-01",
+                    "status": "completed",
+                    "attendees": ["Teacher", "Parent", "Case Manager", "School Psychologist"]
+                },
+                {
+                    "id": "meeting-2",
+                    "type": "quarterly",
+                    "scheduled_date": "2024-05-15",
+                    "status": "scheduled",
+                    "attendees": ["Teacher", "Parent", "Case Manager"]
+                }
+            ]
+        }
+        
+        # Generate personalized activities for the student
+        activities = [
+            {
+                "id": f"activity-1-{student['id'][:8]}",
+                "type": "goal_update",
+                "description": f"Updated {student['first_name']}'s reading comprehension goal progress to 72%",
+                "timestamp": "2024-04-20T10:30:00Z",
+                "user_name": "Ms. Rodriguez",
+                "metadata": {
+                    "goal_id": f"goal-academic-{student['id'][:8]}",
+                    "previous_progress": 68,
+                    "new_progress": 72,
+                    "student_name": student_name
+                }
+            },
+            {
+                "id": f"activity-2-{student['id'][:8]}",
+                "type": "assessment",
+                "description": f"Completed quarterly progress assessment for {student['first_name']}",
+                "timestamp": "2024-04-18T14:20:00Z",
+                "user_name": "Mr. Thompson",
+                "metadata": {
+                    "assessment_type": "quarterly_progress",
+                    "score": 82,
+                    "grade_level": grade_level,
+                    "student_name": student_name
+                }
+            },
+            {
+                "id": f"activity-3-{student['id'][:8]}",
+                "type": "iep_update",
+                "description": f"Updated IEP accommodations for {student['first_name']}",
+                "timestamp": "2024-04-15T09:00:00Z", 
+                "user_name": "Case Manager Wilson",
+                "metadata": {
+                    "update_type": "accommodations",
+                    "disability_type": disability_type,
+                    "student_name": student_name
+                }
+            },
+            {
+                "id": f"activity-4-{student['id'][:8]}",
+                "type": "meeting",
+                "description": f"Parent conference completed for {student['first_name']}",
+                "timestamp": "2024-04-10T15:30:00Z",
+                "user_name": "Ms. Rodriguez",
+                "metadata": {
+                    "meeting_type": "parent_conference",
+                    "attendees_count": 3,
+                    "student_name": student_name
+                }
+            }
+        ]
+        
+        # Calculate progress metrics
+        progress_metrics = {
+            "overall_percentage": student.get("progress_percentage", 70),
+            "academic_progress": 75,
+            "behavioral_progress": 65,
+            "social_progress": 60,
+            "goals_completed": len([g for g in goals if g["status"] == "completed"]),
+            "goals_total": len(goals),
+            "trend": "improving"
+        }
+        
+        # Format student data using real student information
+        student_data = {
+            "id": str(student["id"]),
+            "first_name": student["first_name"],
+            "last_name": student["last_name"],
+            "grade": student["grade_level"],
+            "primary_disability": student.get("primary_disability_type", "Specific Learning Disability"),
+            "current_iep_status": iep_data["status"] if iep_data else None,
+            "progress_percentage": progress_metrics["overall_percentage"],
+            "alert_status": "warning" if progress_metrics["overall_percentage"] < 60 else "success",
+            "alert_message": "Below target progress" if progress_metrics["overall_percentage"] < 60 else "On track",
+            "last_activity": activities[0]["timestamp"] if activities else None
+        }
+        
+        profile_data = {
+            "student": student_data,
+            "goals": goals,
+            "iep": iep_data,
+            "activities": activities,
+            "progressMetrics": progress_metrics,
+            "lastUpdated": "2024-04-15T15:30:00Z"
+        }
+        
+        logger.info(
+            f"Student profile fetched for {student_id}",
+            extra={
+                "student_id": str(student_id),
+                "goals_count": len(goals),
+                "activities_count": len(activities),
+                "has_iep": bool(iep_data)
+            }
+        )
+        
+        return profile_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching student profile: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch student profile"
+        )
