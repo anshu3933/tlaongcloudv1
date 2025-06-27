@@ -1,6 +1,6 @@
 # Special Education RAG System
 
-A microservices-based system for managing Individualized Education Programs (IEPs) using Retrieval-Augmented Generation (RAG).
+A production-ready microservices-based system for managing Individualized Education Programs (IEPs) using Retrieval-Augmented Generation (RAG) with Google Gemini 2.5 Flash and comprehensive template management.
 
 ## Architecture
 
@@ -8,9 +8,29 @@ The system consists of the following microservices:
 
 - **Auth Service** (Port 8003): Handles user authentication and authorization
 - **Workflow Service** (Port 8004): Manages approval workflows
-- **Special Education Service** (Port 8005): Core IEP management
+- **Special Education Service** (Port 8005): Core IEP management with AI-powered template system
 - **MCP Server** (Port 8001): RAG and LLM integration
 - **ADK Host** (Port 8002): API Gateway and frontend
+
+## ✨ Key Features
+
+### 🎯 IEP Template System
+- **15 Default Templates** covering 5 disability types × 3 grade ranges
+- **IDEA-Compliant Structure** with 13 federal disability categories
+- **SMART Goal Templates** for personalized goal generation
+- **Comprehensive Sections**: Student info, goals, academic areas, accommodations, services
+
+### 🤖 AI-Powered IEP Generation
+- **RAG Integration** with Google Gemini 2.5 Flash
+- **Context-Aware Generation** using student history and similar IEPs
+- **Template-Driven Content** for consistent, professional output
+- **Vector Store Integration** with ChromaDB for similarity matching
+
+### 📊 Production-Ready Architecture
+- **Async SQLAlchemy** with comprehensive session management
+- **Microservices Design** with Docker containerization
+- **RESTful APIs** with OpenAPI documentation
+- **Real-time Data** with PostgreSQL and Redis
 
 ## Prerequisites
 
@@ -97,6 +117,64 @@ The project uses a centralized dependency management strategy:
    cd backend/<service_name>
    pip install -r requirements.txt
    ```
+
+## 🚀 Quick Start API Testing
+
+### Health Checks
+```bash
+# Check all services
+curl http://localhost:8002/health  # ADK Host
+curl http://localhost:8005/health  # Special Education Service
+curl http://localhost:8001/health  # MCP Server
+```
+
+### IEP Template System
+```bash
+# List all templates (15 defaults available)
+curl http://localhost:8005/api/v1/templates
+
+# List disability types (13 IDEA categories)
+curl http://localhost:8005/api/v1/templates/disability-types
+
+# Get specific template
+curl http://localhost:8005/api/v1/templates/{template_id}
+```
+
+### AI-Powered IEP Creation
+```bash
+# Create IEP with RAG (replace UUIDs with actual values)
+curl -X POST "http://localhost:8005/api/v1/ieps/advanced/create-with-rag?current_user_id=1&current_user_role=teacher" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "student_id": "STUDENT_UUID",
+    "template_id": "TEMPLATE_UUID",
+    "academic_year": "2025-2026",
+    "content": {"assessment_summary": "Student shows strengths in visual learning"},
+    "meeting_date": "2025-01-15",
+    "effective_date": "2025-01-15", 
+    "review_date": "2026-01-15"
+  }'
+```
+
+### Student Management
+```bash
+# List students
+curl http://localhost:8005/api/v1/students
+
+# Get student's IEPs
+curl http://localhost:8005/api/v1/ieps/student/{student_id}
+```
+
+### Document RAG (MCP Server)
+```bash
+# Process documents
+curl -X POST http://localhost:8001/documents/process
+
+# Query with AI
+curl -X POST http://localhost:8002/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What assessment reports are available?"}'
+```
 
 ## Development
 

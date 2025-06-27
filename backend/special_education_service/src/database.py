@@ -29,11 +29,11 @@ if not settings.database_url.startswith("sqlite"):
 
 engine = create_async_engine(settings.database_url, **engine_kwargs)
 
-# Create session factory
+# Create session factory with safe defaults
 async_session_factory = async_sessionmaker(
     engine,
     class_=AsyncSession,
-    expire_on_commit=False
+    expire_on_commit=True  # Safer default - prevents lazy loading issues
 )
 
 @asynccontextmanager
@@ -51,8 +51,15 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency for FastAPI to get database session"""
-    async with get_db_session() as session:
-        yield session
+    async with async_session_factory() as session:
+        try:
+            yield session
+        except Exception as e:
+            logger.error(f"Database session error: {e}")
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
 async def create_tables():
     """Create all database tables"""

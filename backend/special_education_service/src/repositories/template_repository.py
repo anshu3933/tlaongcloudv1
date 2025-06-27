@@ -29,10 +29,26 @@ class TemplateRepository:
         await self.session.commit()
         await self.session.refresh(template)
         
-        return await self._template_to_dict(template)
+        # Create response dict manually to avoid any potential field access issues
+        response_data = {
+            "id": str(template.id),
+            "name": template_data["name"],
+            "disability_type_id": str(template_data.get("disability_type_id")) if template_data.get("disability_type_id") else None,
+            "grade_level": template_data.get("grade_level"),
+            "sections": template_data["sections"],
+            "default_goals": template_data.get("default_goals", []),
+            "version": template_data.get("version", 1),
+            "is_active": True,
+            "created_by_auth_id": template_data["created_by_auth_id"],
+            "created_at": template.created_at.isoformat() if hasattr(template, 'created_at') and template.created_at else None,
+            "updated_at": None,
+            "disability_type": None
+        }
+        
+        return response_data
     
     async def get_template(self, template_id: UUID) -> Optional[dict]:
-        """Get template by ID"""
+        """Get template by ID with eager loading"""
         query = select(IEPTemplate).where(IEPTemplate.id == template_id)
         query = query.options(selectinload(IEPTemplate.disability_type))
         
@@ -42,7 +58,7 @@ class TemplateRepository:
         if not template:
             return None
         
-        return await self._template_to_dict(template)
+        return await self._template_to_dict_safe(template)
     
     async def update_template(self, template_id: UUID, updates: dict) -> Optional[dict]:
         """Update template"""
@@ -94,7 +110,7 @@ class TemplateRepository:
         result = await self.session.execute(query)
         templates = result.scalars().all()
         
-        return [await self._template_to_dict(template) for template in templates]
+        return [await self._template_to_dict_safe(template) for template in templates]
     
     async def get_templates_by_disability_and_grade(
         self,
@@ -113,7 +129,7 @@ class TemplateRepository:
         result = await self.session.execute(query)
         templates = result.scalars().all()
         
-        return [await self._template_to_dict(template) for template in templates]
+        return [await self._template_to_dict_safe(template) for template in templates]
     
     async def create_disability_type(self, disability_data: dict) -> dict:
         """Create new disability type"""
@@ -189,6 +205,23 @@ class TemplateRepository:
             }
         
         return data
+    
+    def _template_to_dict_safe(self, template: IEPTemplate) -> dict:
+        """Convert IEPTemplate to dictionary safely - no relationship access"""
+        return {
+            "id": str(template.id),
+            "name": template.name,
+            "disability_type_id": str(template.disability_type_id) if template.disability_type_id else None,
+            "grade_level": template.grade_level,
+            "sections": template.sections,
+            "default_goals": template.default_goals or [],
+            "version": template.version,
+            "is_active": template.is_active,
+            "created_by_auth_id": template.created_by_auth_id,
+            "created_at": template.created_at.isoformat() if template.created_at else None,
+            "updated_at": template.updated_at.isoformat() if template.updated_at else None,
+            "disability_type": None  # Will be populated separately if needed
+        }
     
     async def _disability_to_dict(self, disability: DisabilityType) -> dict:
         """Convert DisabilityType model to dictionary"""
