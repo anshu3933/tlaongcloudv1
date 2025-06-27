@@ -35,6 +35,11 @@ class IEPService:
     ) -> Dict[str, Any]:
         """Create new IEP using template and RAG generation"""
         
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[DEBUG] Creating IEP with RAG for student {student_id}, academic year {academic_year}")
+        logger.info(f"Creating IEP with RAG for student {student_id}, academic year {academic_year}")
+        
         # 1. Load template
         template = await self.repository.get_template(template_id)
         if not template:
@@ -50,7 +55,7 @@ class IEPService:
             limit=3
         )
         
-        # 3. Generate IEP content using RAG
+        # 3. Generate IEP content using RAG (this can take time, so do it outside transaction)
         iep_content = await self.iep_generator.generate_iep(
             template=template,
             student_data=initial_data,
@@ -58,17 +63,48 @@ class IEPService:
             previous_assessments=previous_pls
         )
         
-        # 4. Create IEP record
-        iep = await self.repository.create_iep({
+        # 4. Get next version number atomically and create IEP within same transaction
+        # IMPORTANT: We need to ensure atomic versioning happens in the same transaction
+        # Get next version number atomically
+        version_number = await self.repository.get_next_version_number(
+            student_id, academic_year
+        )
+        logger.error(f"[DEBUG] Atomic version number assigned: {version_number}")
+        logger.info(f"Atomic version number assigned: {version_number} for student {student_id} in {academic_year}")
+        
+        # Get parent version if this is not the first version
+        parent_version_id = None
+        if version_number > 1:
+            latest_iep = await self.repository.get_latest_iep_version(
+                student_id, academic_year
+            )
+            if latest_iep:
+                parent_version_id = latest_iep["id"]
+                logger.error(f"[DEBUG] Parent version ID: {parent_version_id}")
+        else:
+            logger.error(f"[DEBUG] First IEP version for student {student_id} in {academic_year}")
+        
+        # Create IEP record with proper versioning
+        iep_data = {
             "student_id": student_id,
             "template_id": template_id,
             "academic_year": academic_year,
             "status": "draft",
             "content": iep_content,
+            "version": version_number,
             "created_by": user_id
-        })
+        }
         
-        # 5. Create goals if provided
+        # Add parent version if this is not the first version
+        if parent_version_id:
+            iep_data["parent_version_id"] = parent_version_id
+        
+        logger.error(f"[DEBUG] About to create IEP with version: {version_number}")
+        # Create the IEP
+        iep = await self.repository.create_iep(iep_data)
+        logger.error(f"[DEBUG] IEP created successfully with ID: {iep['id']}, version: {version_number}")
+        
+        # 5. Create goals if provided (outside transaction for performance)
         if initial_data.get("goals"):
             for goal_data in initial_data["goals"]:
                 await self.repository.create_iep_goal({
@@ -77,14 +113,15 @@ class IEPService:
                 })
         
         # 6. Create audit log
-        await self.audit_client.log_action(
-            entity_type="iep",
-            entity_id=iep["id"],
-            action="create",
-            user_id=user_id,
-            user_role=user_role,
-            changes={"initial_creation": True}
-        )
+        if self.audit_client:
+            await self.audit_client.log_action(
+                entity_type="iep",
+                entity_id=iep["id"],
+                action="create",
+                user_id=user_id,
+                user_role=user_role,
+                changes={"initial_creation": True, "version": version_number}
+            )
         
         # 7. Index in vector store for future retrieval
         await self._index_iep_content(iep)

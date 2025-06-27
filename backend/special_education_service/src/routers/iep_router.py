@@ -8,7 +8,11 @@ import logging
 from ..database import get_db
 from ..repositories.iep_repository import IEPRepository
 from ..repositories.student_repository import StudentRepository
+from ..repositories.pl_repository import PLRepository
+from ..services.iep_service import IEPService
 from ..services.user_adapter import UserAdapter
+from ..rag.iep_generator import IEPGenerator
+from common.src.vector_store import VectorStore
 from ..schemas.iep_schemas import (
     IEPCreate, IEPUpdate, IEPResponse, IEPSubmitForApproval,
     IEPVersionHistory, GoalProgressUpdate,
@@ -27,6 +31,30 @@ user_adapter = UserAdapter(
     cache_ttl_seconds=300
 )
 
+# Initialize vector store and IEP generator (same as advanced router)
+import os
+if os.getenv("ENVIRONMENT") == "development":
+    # Development: Use ChromaDB with collection_name
+    vector_store = VectorStore(
+        project_id=getattr(settings, 'gcp_project_id', 'default-project'),
+        collection_name="rag_documents"
+    )
+else:
+    # Production: Use VertexVectorStore with proper factory method
+    try:
+        from common.src.vector_store.vertex_vector_store import VertexVectorStore
+        vector_store = VertexVectorStore.from_settings(settings)
+    except (ValueError, AttributeError) as e:
+        # Fallback to ChromaDB if Vertex is not configured
+        print(f"Warning: Vertex AI not configured ({e}), falling back to ChromaDB")
+        from common.src.vector_store.chroma_vector_store import VectorStore as ChromaVectorStore
+        vector_store = ChromaVectorStore(
+            project_id=getattr(settings, 'gcp_project_id', 'default-project'),
+            collection_name="rag_documents"
+        )
+
+iep_generator = IEPGenerator(vector_store=vector_store, settings=settings)
+
 async def get_iep_repository(db: AsyncSession = Depends(get_db)) -> IEPRepository:
     """Dependency to get IEP repository"""
     return IEPRepository(db)
@@ -34,6 +62,24 @@ async def get_iep_repository(db: AsyncSession = Depends(get_db)) -> IEPRepositor
 async def get_student_repository(db: AsyncSession = Depends(get_db)) -> StudentRepository:
     """Dependency to get Student repository"""
     return StudentRepository(db)
+
+async def get_iep_service(db: AsyncSession = Depends(get_db)) -> IEPService:
+    """Dependency to get IEP service with repositories"""
+    iep_repo = IEPRepository(db)
+    pl_repo = PLRepository(db)
+    
+    # Create mock clients for now - TODO: integrate with actual services
+    workflow_client = None
+    audit_client = None
+    
+    return IEPService(
+        repository=iep_repo,
+        pl_repository=pl_repo,
+        vector_store=vector_store,
+        iep_generator=iep_generator,
+        workflow_client=workflow_client,
+        audit_client=audit_client
+    )
 
 async def enrich_iep_response(iep_data: dict) -> IEPResponse:
     """Enrich IEP data with user information"""
@@ -62,29 +108,47 @@ async def enrich_iep_response(iep_data: dict) -> IEPResponse:
 async def create_iep(
     iep_data: IEPCreate,
     current_user_id: int = Query(..., description="Current user's auth ID"),
-    iep_repo: IEPRepository = Depends(get_iep_repository),
-    student_repo: StudentRepository = Depends(get_student_repository)
+    current_user_role: str = Query("teacher", description="Current user's role"),
+    iep_service: IEPService = Depends(get_iep_service)
 ):
-    """Create a new IEP"""
+    """Create a new IEP with atomic versioning"""
     try:
-        # Verify student exists
-        student = await student_repo.get_student(iep_data.student_id)
-        if not student:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Student {iep_data.student_id} not found"
-            )
+        # Prepare initial data from request
+        initial_data = {
+            "content": iep_data.content,
+            "meeting_date": iep_data.meeting_date,
+            "effective_date": iep_data.effective_date,
+            "review_date": iep_data.review_date
+        }
         
-        # Prepare IEP data
-        iep_dict = iep_data.model_dump()
-        iep_dict["created_by"] = current_user_id
+        # Add goals if provided
+        if iep_data.goals:
+            initial_data["goals"] = [goal.model_dump() for goal in iep_data.goals]
         
-        # Create IEP
-        created_iep = await iep_repo.create_iep(iep_dict)
+        # Use the service layer to create IEP with atomic versioning
+        # This will use the same logic as the RAG endpoint
+        created_iep = await iep_service.create_iep_with_rag(
+            student_id=iep_data.student_id,
+            template_id=iep_data.template_id if hasattr(iep_data, 'template_id') else None,
+            academic_year=iep_data.academic_year,
+            initial_data=initial_data,
+            user_id=current_user_id,
+            user_role=current_user_role
+        )
         
-        # Enrich and return response
-        return await enrich_iep_response(created_iep)
+        # Enrich with user information
+        enriched_data = created_iep.copy()
+        if created_iep.get("created_by_auth_id"):
+            user = await user_adapter.resolve_user(created_iep["created_by_auth_id"])
+            enriched_data["created_by_user"] = user
         
+        return IEPResponse(**enriched_data)
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         logger.error(f"Error creating IEP: {e}")
         raise HTTPException(

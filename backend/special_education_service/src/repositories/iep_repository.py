@@ -2,7 +2,7 @@
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, and_, desc
+from sqlalchemy import select, update, and_, desc, func
 from sqlalchemy.orm import selectinload, joinedload
 from datetime import datetime
 
@@ -13,6 +13,39 @@ from ..models.special_education_models import (
 class IEPRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
+    
+    async def get_next_version_number(self, student_id: UUID, academic_year: str) -> int:
+        """Get the next available version number atomically within transaction"""
+        # Use SELECT FOR UPDATE to lock the rows and prevent race conditions
+        query = select(func.max(IEP.version)).where(
+            and_(
+                IEP.student_id == student_id,
+                IEP.academic_year == academic_year
+            )
+        ).with_for_update()
+        
+        result = await self.session.execute(query)
+        max_version = result.scalar()
+        
+        # Return next version number (1 if no existing IEPs)
+        return (max_version or 0) + 1
+    
+    async def get_latest_iep_version(self, student_id: UUID, academic_year: str) -> Optional[dict]:
+        """Get the latest IEP version for a student in an academic year"""
+        query = select(IEP).where(
+            and_(
+                IEP.student_id == student_id,
+                IEP.academic_year == academic_year
+            )
+        ).order_by(desc(IEP.version)).limit(1)
+        
+        result = await self.session.execute(query)
+        iep = result.scalar_one_or_none()
+        
+        if not iep:
+            return None
+            
+        return self._iep_to_dict(iep, include_goals=False)
     
     async def create_iep(self, iep_data: dict) -> dict:
         """Create new IEP with validation"""
