@@ -1,6 +1,6 @@
 """Pydantic schemas for IEP operations"""
-from pydantic import BaseModel, Field, ConfigDict, validator
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict, validator, field_serializer
+from typing import Optional, List, Dict, Any, Union
 from datetime import date, datetime
 from uuid import UUID
 from enum import Enum
@@ -57,14 +57,21 @@ class ProgressNote(BaseModel):
 
 class IEPGoalResponse(IEPGoalBase):
     """Schema for IEP goal responses"""
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
+            datetime: lambda v: v.isoformat() if hasattr(v, 'isoformat') else str(v),
+            UUID: lambda v: str(v),
+            date: lambda v: v.isoformat() if hasattr(v, 'isoformat') else str(v)
+        }
+    )
     
     id: UUID
     iep_id: UUID
     progress_status: GoalStatusEnum
     progress_notes: List[ProgressNote] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: Optional[datetime] = None
+    created_at: Union[datetime, str]
+    updated_at: Optional[Union[datetime, str]] = None
 
 class IEPBase(BaseModel):
     """Base IEP fields"""
@@ -107,7 +114,14 @@ class IEPUpdate(BaseModel):
 
 class IEPResponse(IEPBase):
     """Schema for IEP responses"""
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
+            datetime: lambda v: v.isoformat() if hasattr(v, 'isoformat') else str(v),
+            UUID: lambda v: str(v),
+            date: lambda v: v.isoformat() if hasattr(v, 'isoformat') else str(v)
+        }
+    )
     
     id: UUID
     student_id: UUID
@@ -116,8 +130,8 @@ class IEPResponse(IEPBase):
     version: int
     parent_version_id: Optional[UUID] = None
     created_by_auth_id: int
-    created_at: datetime
-    approved_at: Optional[datetime] = None
+    created_at: Union[datetime, str]
+    approved_at: Optional[Union[datetime, str]] = None
     approved_by_auth_id: Optional[int] = None
     goals: List[IEPGoalResponse] = Field(default_factory=list)
     

@@ -74,7 +74,7 @@ class TemplateRepository:
         await self.session.commit()
         await self.session.refresh(template)
         
-        return await self._template_to_dict(template)
+        return self._template_to_dict(template)
     
     async def delete_template(self, template_id: UUID) -> bool:
         """Soft delete template"""
@@ -146,7 +146,7 @@ class TemplateRepository:
         await self.session.commit()
         await self.session.refresh(disability)
         
-        return await self._disability_to_dict(disability)
+        return self._disability_to_dict(disability)
     
     async def get_disability_type(self, disability_id: UUID) -> Optional[dict]:
         """Get disability type by ID"""
@@ -154,7 +154,7 @@ class TemplateRepository:
         if not disability:
             return None
         
-        return await self._disability_to_dict(disability)
+        return self._disability_to_dict(disability)
     
     async def get_disability_type_by_code(self, code: str) -> Optional[dict]:
         """Get disability type by code"""
@@ -166,7 +166,7 @@ class TemplateRepository:
         if not disability:
             return None
         
-        return await self._disability_to_dict(disability)
+        return self._disability_to_dict(disability)
     
     async def list_disability_types(self, is_active: bool = True) -> List[dict]:
         """List all disability types"""
@@ -176,9 +176,9 @@ class TemplateRepository:
         result = await self.session.execute(query)
         disabilities = result.scalars().all()
         
-        return [await self._disability_to_dict(disability) for disability in disabilities]
+        return [self._disability_to_dict(disability) for disability in disabilities]
     
-    async def _template_to_dict(self, template: IEPTemplate) -> dict:
+    def _template_to_dict(self, template: IEPTemplate) -> dict:
         """Convert IEPTemplate model to dictionary"""
         data = {
             "id": str(template.id),
@@ -223,7 +223,7 @@ class TemplateRepository:
             "disability_type": None  # Will be populated separately if needed
         }
     
-    async def _disability_to_dict(self, disability: DisabilityType) -> dict:
+    def _disability_to_dict(self, disability: DisabilityType) -> dict:
         """Convert DisabilityType model to dictionary"""
         return {
             "id": str(disability.id),

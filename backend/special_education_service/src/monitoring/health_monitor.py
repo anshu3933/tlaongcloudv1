@@ -2,10 +2,10 @@ import asyncio
 import psutil
 import time
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 
-from ..database import get_session_maker
+from ..database import async_session_factory
 from .metrics_collector import metrics_collector
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ class HealthMonitor:
             memory_usage_mb = memory_info.used / (1024 * 1024)
             
             # Database pool metrics
-            session_maker = get_session_maker()
+            session_maker = async_session_factory
             pool_size = getattr(session_maker.bind.pool, 'size', lambda: 10)()
             pool_checked_out = getattr(session_maker.bind.pool, 'checkedout', lambda: 0)()
             
@@ -105,7 +105,7 @@ class HealthMonitor:
             start_time = time.time()
             
             # Simple database health check
-            session_maker = get_session_maker()
+            session_maker = async_session_factory
             async with session_maker() as session:
                 result = await session.execute("SELECT 1")
                 await result.fetchone()

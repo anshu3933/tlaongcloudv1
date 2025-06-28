@@ -41,12 +41,11 @@ class IEPService:
         logger.error(f"[DEBUG] Creating IEP with RAG for student {student_id}, academic year {academic_year}")
         logger.info(f"Creating IEP with RAG for student {student_id}, academic year {academic_year}")
         
-        # 1. Load template
+        # STEP 1: Collect all needed data from database FIRST (before any external calls)
         template = await self.repository.get_template(template_id)
         if not template:
             raise ValueError(f"Template {template_id} not found")
         
-        # 2. Get student history for context
         previous_ieps = await self.repository.get_student_ieps(
             student_id, 
             limit=3
@@ -56,13 +55,47 @@ class IEPService:
             limit=3
         )
         
-        # 3. Generate IEP content using RAG (this can take time, so do it outside transaction)
+        # STEP 2: Disconnect from database session and generate content with RAG
+        # This ensures no active DB session during external API calls
+        logger.info("Starting RAG generation (external API calls)")
+        
+        # Prepare data for RAG (convert to serializable format)
+        template_data = {
+            "id": str(template["id"]),
+            "name": template.get("name", ""),
+            "sections": template.get("sections", {}),
+            "default_goals": template.get("default_goals", [])
+        }
+        
+        previous_ieps_data = [
+            {
+                "id": str(iep["id"]),
+                "content": iep.get("content", {}),
+                "academic_year": iep.get("academic_year", ""),
+                "status": iep.get("status", "")
+            }
+            for iep in previous_ieps
+        ]
+        
+        previous_pls_data = [
+            {
+                "id": str(pl["id"]),
+                "present_levels": pl.get("present_levels", ""),
+                "strengths": pl.get("strengths", []),
+                "needs": pl.get("needs", [])
+            }
+            for pl in previous_pls
+        ]
+        
+        # Generate IEP content using RAG (no database session active)
         iep_content = await self.iep_generator.generate_iep(
-            template=template,
+            template=template_data,
             student_data=initial_data,
-            previous_ieps=previous_ieps,
-            previous_assessments=previous_pls
+            previous_ieps=previous_ieps_data,
+            previous_assessments=previous_pls_data
         )
+        
+        logger.info("RAG generation completed, proceeding with database operations")
         
         # 4. Get next version number atomically and create IEP within same transaction
         # IMPORTANT: We need to ensure atomic versioning happens in the same transaction
@@ -122,6 +155,21 @@ class IEPService:
         # Execute with retry mechanism
         iep = await retry_iep_operation(_create_rag_iep_operation)
         
+        logger.info(f"IEP created successfully: {iep['id']}")
+        
+        # SAFETY: Test JSON serialization of IEP before proceeding  
+        try:
+            import json
+            test_json = json.dumps(iep, default=str)
+            logger.info(f"IEP data JSON serialization test passed, length: {len(test_json)}")
+        except Exception as json_error:
+            logger.error(f"IEP data JSON serialization failed: {json_error}")
+            logger.error(f"IEP keys: {list(iep.keys())}")
+            logger.error(f"Content keys: {list(iep.get('content', {}).keys())}")
+        
+        # IMPORTANT: All subsequent operations must be outside the database transaction
+        # to avoid greenlet errors from external API calls
+        
         # 5. Create goals if provided (outside transaction for performance)
         if initial_data.get("goals"):
             for goal_data in initial_data["goals"]:
@@ -130,19 +178,26 @@ class IEPService:
                     **goal_data
                 })
         
-        # 6. Create audit log
-        if self.audit_client:
-            await self.audit_client.log_action(
-                entity_type="iep",
-                entity_id=iep["id"],
-                action="create",
-                user_id=user_id,
-                user_role=user_role,
-                changes={"initial_creation": True, "version": version_number}
-            )
+        # 6. Create audit log (external service - outside transaction)
+        try:
+            if self.audit_client:
+                await self.audit_client.log_action(
+                    entity_type="iep",
+                    entity_id=iep["id"],
+                    action="create",
+                    user_id=user_id,
+                    user_role=user_role,
+                    changes={"initial_creation": True, "version": iep["version"]}
+                )
+        except Exception as e:
+            logger.warning(f"Audit logging failed (non-critical): {e}")
         
-        # 7. Index in vector store for future retrieval
-        await self._index_iep_content(iep)
+        # 7. Index in vector store for future retrieval (external service - outside transaction)
+        try:
+            await self._index_iep_content(iep)
+            logger.info("IEP indexed successfully in vector store")
+        except Exception as e:
+            logger.warning(f"Vector store indexing failed (non-critical): {e}")
         
         return iep
     
@@ -416,7 +471,7 @@ class IEPService:
                 "student_id": str(iep["student_id"]),
                 "academic_year": iep["academic_year"],
                 "version": iep["version"],
-                "created_at": iep["created_at"].isoformat()
+                "created_at": iep["created_at"].isoformat() if hasattr(iep["created_at"], 'isoformat') else str(iep["created_at"])
             }
         }])
     

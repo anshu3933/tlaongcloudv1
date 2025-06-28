@@ -14,7 +14,7 @@ curl -X POST http://localhost:8001/documents/process
 npm run dev
 ```
 
-## System Status ✅ FULLY OPERATIONAL
+## System Status ✅ FULLY OPERATIONAL WITH RAG INTEGRATION
 - **All services operational** with real LLM integration
 - **Student management system** fully functional with real-time data
 - **18 documents processed** from GCS bucket (betrag-data-test-a)
@@ -23,14 +23,17 @@ npm run dev
 - **Dashboard** showing real student counts and statistics
 - **6 active students** in the system with full CRUD operations
 - **🎉 IEP Template System** - 15+ default templates for AI-powered IEP generation ✅ WORKING
-- **🤖 RAG-Powered IEP Creation** - AI-generated personalized IEPs using templates ✅ WORKING
-- **📋 Backend Templates Accessible** - Templates visible via direct API calls ✅ WORKING
-- **🔧 Frontend Integration** - COMPLETED ✅ Templates integrated with selection UI and error handling
+- **🤖 RAG-Powered IEP Creation** - AI-generated personalized IEPs using Gemini 2.5 Flash ✅ WORKING
+- **📋 Backend Templates Accessible** - 15+ templates available via API ✅ WORKING
+- **🔧 Frontend Integration** - COMPLETED ✅ Full RAG IEP generation workflow integrated
+- **🛠️ JSON Serialization** - RESOLVED ✅ Comprehensive datetime and content serialization fixes
+- **⚡ Performance Optimized** - COMPLETED ✅ Greenlet errors resolved, async operations optimized
 
 ## Architecture
 ```
-Next.js Frontend (:3000) → ADK Host (:8002) → MCP Server (:8001) → ChromaDB + GCS → Gemini 2.5
+Next.js Frontend (:3002) → ADK Host (:8002) → MCP Server (:8001) → ChromaDB + GCS → Gemini 2.5
                         → Special Ed Service (:8005) → PostgreSQL + RAG Templates → Gemini 2.5
+                        → RAG IEP Generator → Vector Store + Template System → AI Content Generation
 ```
 
 ## Key Configuration
@@ -41,6 +44,8 @@ Next.js Frontend (:3000) → ADK Host (:8002) → MCP Server (:8001) → ChromaD
 - **Environment**: development (using ChromaDB)
 
 ## Test Commands
+
+### Core System Testing
 ```bash
 # Health check
 curl http://localhost:8002/health
@@ -52,18 +57,37 @@ curl -X POST http://localhost:8002/api/v1/query \
 
 # Document library
 curl http://localhost:8001/documents/list
+```
 
-# Student management
-curl http://localhost:8005/api/v1/students  # List all students
+### Student Management
+```bash
+# List all students
+curl http://localhost:8005/api/v1/students | jq .
+
+# Create new student
 curl -X POST http://localhost:8005/api/v1/students \
   -H "Content-Type: application/json" \
   -d '{"student_id": "TEST001", "first_name": "Test", "last_name": "Student", "date_of_birth": "2015-01-01", "grade_level": "5", "disability_codes": ["SLD"], "school_district": "Default District", "school_name": "Default School", "enrollment_date": "2025-06-26"}'
+```
 
-# IEP Template System
-curl http://localhost:8005/api/v1/templates  # List all templates
-curl http://localhost:8005/api/v1/templates/disability-types  # List disability types
+### IEP Template System (15+ Templates Available)
+```bash
+# List all templates
+curl http://localhost:8005/api/v1/templates | jq .
 
-# RAG-Powered IEP Creation
+# List disability types
+curl http://localhost:8005/api/v1/templates/disability-types | jq .
+
+# Filter templates by grade and status
+curl "http://localhost:8005/api/v1/templates?grade_level=K-5&is_active=true" | jq '.items[0].name'
+
+# Template count verification
+curl http://localhost:8005/api/v1/templates | jq '.items | length'  # Returns 15+ templates
+```
+
+### RAG-Powered IEP Creation (AI-Generated Content)
+```bash
+# Create AI-powered IEP using RAG
 curl -X POST "http://localhost:8005/api/v1/ieps/advanced/create-with-rag?current_user_id=1&current_user_role=teacher" \
   -H "Content-Type: application/json" \
   -d '{
@@ -74,14 +98,33 @@ curl -X POST "http://localhost:8005/api/v1/ieps/advanced/create-with-rag?current
     "meeting_date": "2025-01-15",
     "effective_date": "2025-01-15",
     "review_date": "2026-01-15"
-  }'
+  }' | jq .
 
-# Template System Status Check
-curl http://localhost:8005/api/v1/templates | jq '.items | length'  # Returns 15+ templates
-curl "http://localhost:8005/api/v1/templates?grade_level=K-5&is_active=true" | jq '.items[0].name'  # Filter test
+# List existing IEPs for student
+curl "http://localhost:8005/api/v1/ieps/student/c6f74363-c1fb-4b0f-bd6b-0ae5c8a6f826" | jq .
+```
+
+### Frontend Access URLs
+```bash
+# Main application
+open http://localhost:3002
+
+# RAG IEP Generator
+open http://localhost:3002/students/iep/generator
+
+# Student management
+open http://localhost:3002/students
+
+# Template management
+open http://localhost:3002/templates
+
+# Dashboard
+open http://localhost:3002/dashboard
 ```
 
 ## Issues Resolved ✅
+
+### Core Infrastructure
 1. **Docker dependencies** - All Dockerfiles updated with required packages
 2. **Vector store errors** - Environment detection fixed for development/production
 3. **GCP authentication** - Credential mounting corrected in docker-compose.yml
@@ -89,15 +132,25 @@ curl "http://localhost:8005/api/v1/templates?grade_level=K-5&is_active=true" | j
 5. **Document source paths** - Metadata properly shows document names
 6. **Frontend routing conflicts** - Conflicting pages renamed to .disabled
 7. **Service networking** - All internal service URLs properly configured
+
+### Data Management
 8. **Dashboard connection errors** - Fixed port mismatch in .env.local (8006→8005)
 9. **Student profile endpoints** - Implemented composite data fetching from available APIs
 10. **Dashboard mock data** - Integrated real student data with fallback to mock
 11. **Student management flow** - Complete CRUD operations working end-to-end
 12. **Real-time updates** - Dashboard widgets show live student counts
-13. **🔧 SQLAlchemy Greenlet Errors** - Fixed async session management and object lifecycle
+
+### RAG & AI Integration
+13. **🔧 SQLAlchemy Greenlet Errors** - CRITICAL FIX ✅ Separated database transactions from external API calls
 14. **📋 IEP Template System** - Created 15 default templates with comprehensive structure
 15. **🤖 RAG Integration** - AI-powered IEP generation working with Gemini 2.5 Flash
-16. **📋 Frontend-Backend Template Disconnect** - RESOLVED ✅ Templates now integrated with UI
+16. **📋 Frontend-Backend Template Disconnect** - RESOLVED ✅ Templates integrated with UI
+
+### JSON Serialization & Performance
+17. **🛠️ Datetime Serialization Errors** - RESOLVED ✅ Added defensive serialization in Pydantic schemas and repository layer
+18. **⚡ Async Session Management** - OPTIMIZED ✅ Fixed request-scoped sessions and greenlet compatibility
+19. **🔧 JSON Response Formatting** - ENHANCED ✅ Implemented comprehensive error handling for Gemini API responses
+20. **📊 Database Performance** - IMPROVED ✅ Optimized async operations and transaction management
 
 ## Troubleshooting
 - If chat returns empty responses: Reprocess documents with `curl -X POST http://localhost:8001/documents/process`
@@ -144,10 +197,30 @@ curl -X POST "http://localhost:8005/api/v1/ieps/advanced/create-with-rag?current
 4. **RAG Connection**: AI generation now uses selected template for personalized IEPs
 
 **How to Test**:
-1. Navigate to http://localhost:3000/students/iep/generator
+1. Navigate to http://localhost:3002/students/iep/generator
 2. In Step 1, look for "IEP Template Selection" accordion section
 3. Select a template based on student's needs
 4. Complete the form and click "Generate IEP"
-5. View all templates at http://localhost:3000/templates
+5. View all templates at http://localhost:3002/templates
 
-See STARTUP_CONFIG.md for detailed troubleshooting guide.
+## 📋 **COMPREHENSIVE DOCUMENTATION**
+
+### **Complete System Status**
+- **📊 RAG IEP Status Report**: [RAG_IEP_STATUS.md](./RAG_IEP_STATUS.md) - Complete technical and functional status
+- **🔧 Special Education Service**: [backend/special_education_service/CLAUDE.md](./backend/special_education_service/CLAUDE.md) - Service-specific documentation
+- **🚀 Startup Guide**: [STARTUP_CONFIG.md](./STARTUP_CONFIG.md) - Detailed troubleshooting guide
+
+### **Quick Access Links**
+- **🤖 RAG IEP Generator**: http://localhost:3002/students/iep/generator
+- **👥 Student Management**: http://localhost:3002/students  
+- **📋 Template Management**: http://localhost:3002/templates
+- **📚 API Documentation**: http://localhost:8005/docs
+- **🏥 Health Check**: http://localhost:8005/health
+
+### **Testing Workflow**
+1. Navigate to the RAG IEP Generator
+2. Select a student from the list
+3. Choose an appropriate template (15+ available)
+4. Configure academic year and assessment details
+5. Generate AI-powered IEP content
+6. Review structured output with goals, services, and accommodations

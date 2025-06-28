@@ -142,9 +142,10 @@ class IEPRepository:
         # Get the result as dict before committing (within same transaction)
         result = self._iep_to_dict(iep, include_goals=True)
         
-        # Now commit the transaction
+        # Commit the transaction first
         await self.session.commit()
         
+        # IMPORTANT: Return result AFTER commit to avoid any serialization issues during transaction
         return result
     
     async def get_iep(self, iep_id: UUID, include_goals: bool = True) -> Optional[dict]:
@@ -377,14 +378,14 @@ class IEPRepository:
             "academic_year": iep.academic_year,
             "status": iep.status,
             "content": iep.content,
-            "meeting_date": iep.meeting_date.isoformat() if iep.meeting_date else None,
-            "effective_date": iep.effective_date.isoformat() if iep.effective_date else None,
-            "review_date": iep.review_date.isoformat() if iep.review_date else None,
+            "meeting_date": iep.meeting_date.isoformat() if iep.meeting_date and hasattr(iep.meeting_date, 'isoformat') else str(iep.meeting_date) if iep.meeting_date else None,
+            "effective_date": iep.effective_date.isoformat() if iep.effective_date and hasattr(iep.effective_date, 'isoformat') else str(iep.effective_date) if iep.effective_date else None,
+            "review_date": iep.review_date.isoformat() if iep.review_date and hasattr(iep.review_date, 'isoformat') else str(iep.review_date) if iep.review_date else None,
             "version": iep.version,
             "parent_version_id": str(iep.parent_version_id) if iep.parent_version_id else None,
             "created_by_auth_id": iep.created_by_auth_id,
-            "created_at": iep.created_at.isoformat() if iep.created_at else None,
-            "approved_at": iep.approved_at.isoformat() if iep.approved_at else None,
+            "created_at": iep.created_at.isoformat() if iep.created_at and hasattr(iep.created_at, 'isoformat') else str(iep.created_at) if iep.created_at else None,
+            "approved_at": iep.approved_at.isoformat() if iep.approved_at and hasattr(iep.approved_at, 'isoformat') else str(iep.approved_at) if iep.approved_at else None,
             "approved_by_auth_id": iep.approved_by_auth_id
         }
         
@@ -404,10 +405,10 @@ class IEPRepository:
             "target_criteria": goal.target_criteria,
             "measurement_method": goal.measurement_method,
             "measurement_frequency": goal.measurement_frequency,
-            "target_date": goal.target_date.isoformat() if goal.target_date else None,
-            "start_date": goal.start_date.isoformat() if goal.start_date else None,
+            "target_date": goal.target_date.isoformat() if goal.target_date and hasattr(goal.target_date, 'isoformat') else str(goal.target_date) if goal.target_date else None,
+            "start_date": goal.start_date.isoformat() if goal.start_date and hasattr(goal.start_date, 'isoformat') else str(goal.start_date) if goal.start_date else None,
             "progress_status": goal.progress_status,
             "progress_notes": goal.progress_notes or [],
-            "created_at": goal.created_at.isoformat() if goal.created_at else None,
-            "updated_at": goal.updated_at.isoformat() if goal.updated_at else None
+            "created_at": goal.created_at.isoformat() if goal.created_at and hasattr(goal.created_at, 'isoformat') else str(goal.created_at) if goal.created_at else None,
+            "updated_at": goal.updated_at.isoformat() if goal.updated_at and hasattr(goal.updated_at, 'isoformat') else str(goal.updated_at) if goal.updated_at else None
         }
