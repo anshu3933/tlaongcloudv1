@@ -1,11 +1,12 @@
 """IEP management API endpoints"""
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from uuid import UUID
 import logging
 
-from ..database import get_db
+from ..database import get_db, get_request_scoped_db
+from ..middleware.session_middleware import get_request_session
 from ..repositories.iep_repository import IEPRepository
 from ..repositories.student_repository import StudentRepository
 from ..repositories.pl_repository import PLRepository
@@ -55,16 +56,19 @@ else:
 
 iep_generator = IEPGenerator(vector_store=vector_store, settings=settings)
 
-async def get_iep_repository(db: AsyncSession = Depends(get_db)) -> IEPRepository:
-    """Dependency to get IEP repository"""
+async def get_iep_repository(request: Request) -> IEPRepository:
+    """Dependency to get IEP repository with request-scoped session"""
+    db = await get_request_session(request)
     return IEPRepository(db)
 
-async def get_student_repository(db: AsyncSession = Depends(get_db)) -> StudentRepository:
-    """Dependency to get Student repository"""
+async def get_student_repository(request: Request) -> StudentRepository:
+    """Dependency to get Student repository with request-scoped session"""
+    db = await get_request_session(request)
     return StudentRepository(db)
 
-async def get_iep_service(db: AsyncSession = Depends(get_db)) -> IEPService:
-    """Dependency to get IEP service with repositories"""
+async def get_iep_service(request: Request) -> IEPService:
+    """Dependency to get IEP service with request-scoped session"""
+    db = await get_request_session(request)
     iep_repo = IEPRepository(db)
     pl_repo = PLRepository(db)
     
@@ -82,27 +86,38 @@ async def get_iep_service(db: AsyncSession = Depends(get_db)) -> IEPService:
     )
 
 async def enrich_iep_response(iep_data: dict) -> IEPResponse:
-    """Enrich IEP data with user information"""
-    # Collect auth IDs for user resolution
-    auth_ids = []
-    if iep_data.get("created_by_auth_id"):
-        auth_ids.append(iep_data["created_by_auth_id"])
-    if iep_data.get("approved_by_auth_id"):
-        auth_ids.append(iep_data["approved_by_auth_id"])
+    """Enrich IEP data with user information (graceful fallback)"""
+    try:
+        # Collect auth IDs for user resolution
+        auth_ids = []
+        if iep_data.get("created_by_auth_id"):
+            auth_ids.append(iep_data["created_by_auth_id"])
+        if iep_data.get("approved_by_auth_id"):
+            auth_ids.append(iep_data["approved_by_auth_id"])
+        
+        # Try to resolve users, but don't fail if it doesn't work
+        users = {}
+        if auth_ids:
+            try:
+                users = await user_adapter.resolve_users(auth_ids)
+            except Exception as e:
+                logger.warning(f"User enrichment failed, returning basic response: {e}")
+                # Fall back to basic response without user enrichment
+                return IEPResponse(**iep_data)
+        
+        # Enrich response
+        enriched_data = iep_data.copy()
+        if iep_data.get("created_by_auth_id"):
+            enriched_data["created_by_user"] = users.get(iep_data["created_by_auth_id"])
+        if iep_data.get("approved_by_auth_id"):
+            enriched_data["approved_by_user"] = users.get(iep_data["approved_by_auth_id"])
+        
+        return IEPResponse(**enriched_data)
     
-    # Resolve users
-    users = {}
-    if auth_ids:
-        users = await user_adapter.resolve_users(auth_ids)
-    
-    # Enrich response
-    enriched_data = iep_data.copy()
-    if iep_data.get("created_by_auth_id"):
-        enriched_data["created_by_user"] = users.get(iep_data["created_by_auth_id"])
-    if iep_data.get("approved_by_auth_id"):
-        enriched_data["approved_by_user"] = users.get(iep_data["approved_by_auth_id"])
-    
-    return IEPResponse(**enriched_data)
+    except Exception as e:
+        logger.warning(f"IEP enrichment failed completely, returning basic response: {e}")
+        # Always return a valid response even if enrichment fails
+        return IEPResponse(**iep_data)
 
 @router.post("", response_model=IEPResponse, status_code=status.HTTP_201_CREATED)
 async def create_iep(
@@ -126,23 +141,18 @@ async def create_iep(
             initial_data["goals"] = [goal.model_dump() for goal in iep_data.goals]
         
         # Use the service layer to create IEP with atomic versioning
-        # This will use the same logic as the RAG endpoint
-        created_iep = await iep_service.create_iep_with_rag(
+        # This uses the simple create_iep method without RAG
+        created_iep = await iep_service.create_iep(
             student_id=iep_data.student_id,
-            template_id=iep_data.template_id if hasattr(iep_data, 'template_id') else None,
             academic_year=iep_data.academic_year,
             initial_data=initial_data,
             user_id=current_user_id,
-            user_role=current_user_role
+            template_id=iep_data.template_id
         )
         
-        # Enrich with user information
-        enriched_data = created_iep.copy()
-        if created_iep.get("created_by_auth_id"):
-            user = await user_adapter.resolve_user(created_iep["created_by_auth_id"])
-            enriched_data["created_by_user"] = user
-        
-        return IEPResponse(**enriched_data)
+        # Return IEP response without user enrichment to avoid greenlet issues
+        # User enrichment can be done by frontend via separate API calls if needed
+        return IEPResponse(**created_iep)
         
     except ValueError as e:
         raise HTTPException(

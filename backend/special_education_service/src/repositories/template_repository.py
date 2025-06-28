@@ -26,7 +26,7 @@ class TemplateRepository:
         )
         
         self.session.add(template)
-        await self.session.commit()
+        await self.session.flush()  # Get ID without committing
         await self.session.refresh(template)
         
         # Create response dict manually to avoid any potential field access issues
@@ -58,7 +58,7 @@ class TemplateRepository:
         if not template:
             return None
         
-        return await self._template_to_dict_safe(template)
+        return self._template_to_dict_safe(template)
     
     async def update_template(self, template_id: UUID, updates: dict) -> Optional[dict]:
         """Update template"""
@@ -110,7 +110,7 @@ class TemplateRepository:
         result = await self.session.execute(query)
         templates = result.scalars().all()
         
-        return [await self._template_to_dict_safe(template) for template in templates]
+        return [self._template_to_dict_safe(template) for template in templates]
     
     async def get_templates_by_disability_and_grade(
         self,
@@ -129,7 +129,7 @@ class TemplateRepository:
         result = await self.session.execute(query)
         templates = result.scalars().all()
         
-        return [await self._template_to_dict_safe(template) for template in templates]
+        return [self._template_to_dict_safe(template) for template in templates]
     
     async def create_disability_type(self, disability_data: dict) -> dict:
         """Create new disability type"""

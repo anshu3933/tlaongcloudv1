@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  special-education-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8006:8005"
+    volumes:
+      # Source code hot-reload (delegated for macOS performance)
+      - ./src:/app/src:delegated
+      - ./tests:/app/tests:delegated
+      # Common library hot-reload
+      - ../common:/app/common:delegated
+      # Exclude virtual environment and cache
+      - /app/src/__pycache__
+      - /app/venv
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - ENVIRONMENT=development
+      - DATABASE_URL=sqlite+aiosqlite:///./test_special_ed.db
+      - LOG_LEVEL=DEBUG
+      - SQLALCHEMY_ECHO=true
+      # Disable external services for development
+      - AUTH_SERVICE_URL=http://mock-auth:8003
+      - GEMINI_MODEL=mock
+      - SMTP_ENABLED=false
+    command: >
+      uvicorn src.main:app 
+      --host 0.0.0.0 
+      --port 8005 
+      --reload 
+      --reload-dir src 
+      --reload-dir ../common/src
+      --log-level debug
+    depends_on:
+      - redis-dev
+      - mock-auth
+    networks:
+      - dev-network
+
+  redis-dev:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass devpassword
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - dev-network
+
+  mock-auth:
+    image: alpine:latest
+    ports:
+      - "8003:8003"
+    command: >
+      sh -c "
+      apk add --no-cache python3 py3-pip &&
+      python3 -c \"
+      from http.server import HTTPServer, BaseHTTPRequestHandler
+      import json
+      
+      class MockAuthHandler(BaseHTTPRequestHandler):
+          def do_GET(self):
+              if '/api/v1/users/' in self.path:
+                  user_id = self.path.split('/')[-1]
+                  self.send_response(200)
+                  self.send_header('Content-type', 'application/json')
+                  self.end_headers()
+                  response = {
+                      'id': int(user_id) if user_id.isdigit() else 1,
+                      'email': f'user{user_id}@example.com',
+                      'full_name': f'Test User {user_id}',
+                      'role': 'teacher',
+                      'is_active': True
+                  }
+                  self.wfile.write(json.dumps(response).encode())
+              else:
+                  self.send_response(404)
+                  self.end_headers()
+          
+          def do_POST(self):
+              self.send_response(405)
+              self.end_headers()
+          
+          def log_message(self, format, *args):
+              pass  # Suppress log messages
+      
+      server = HTTPServer(('0.0.0.0', 8003), MockAuthHandler)
+      print('Mock auth service running on port 8003')
+      server.serve_forever()
+      \"
+      "
+    networks:
+      - dev-network
+
+  db-admin:
+    image: alpine:latest
+    volumes:
+      - ./:/workspace:delegated
+    working_dir: /workspace
+    command: >
+      sh -c "
+      apk add --no-cache python3 py3-pip sqlite &&
+      echo 'SQLite DB Admin available. Use: docker-compose -f docker-compose.dev.yml exec db-admin sqlite3 test_special_ed.db' &&
+      tail -f /dev/null
+      "
+    networks:
+      - dev-network
+
+volumes:
+  redis_dev_data:
+
+networks:
+  dev-network:
+    driver: bridge

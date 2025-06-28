@@ -103,7 +103,7 @@ class IEP(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     student_id = Column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False, index=True)
-    template_id = Column(UUID(as_uuid=True), ForeignKey("iep_templates.id"))
+    template_id = Column(UUID(as_uuid=True), ForeignKey("iep_templates.id"), nullable=True)
     academic_year = Column(String(9), nullable=False)  # Format: "2023-2024"
     status = Column(String(50), default=IEPStatus.DRAFT.value)
     

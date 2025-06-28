@@ -1,5 +1,5 @@
 """Template management API endpoints"""
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from uuid import UUID
@@ -7,6 +7,7 @@ import logging
 import math
 
 from ..database import get_db
+from ..middleware.session_middleware import get_request_session
 from ..repositories.template_repository import TemplateRepository
 from ..services.user_adapter import UserAdapter
 from ..schemas.template_schemas import (
@@ -25,8 +26,9 @@ user_adapter = UserAdapter(
     cache_ttl_seconds=300
 )
 
-async def get_template_repository(db: AsyncSession = Depends(get_db)) -> TemplateRepository:
-    """Dependency to get Template repository"""
+async def get_template_repository(request: Request) -> TemplateRepository:
+    """Dependency to get Template repository with request-scoped session"""
+    db = await get_request_session(request)
     return TemplateRepository(db)
 
 async def enrich_template_response(template_data: dict) -> IEPTemplateResponse:

@@ -6,6 +6,7 @@ from common.src.vector_store import VectorStore
 from ..repositories.iep_repository import IEPRepository
 from ..repositories.pl_repository import PLRepository
 from ..rag.iep_generator import IEPGenerator
+from ..utils.retry import retry_iep_operation, ConflictDetector
 
 class IEPService:
     def __init__(
@@ -65,44 +66,61 @@ class IEPService:
         
         # 4. Get next version number atomically and create IEP within same transaction
         # IMPORTANT: We need to ensure atomic versioning happens in the same transaction
-        # Get next version number atomically
-        version_number = await self.repository.get_next_version_number(
-            student_id, academic_year
-        )
-        logger.error(f"[DEBUG] Atomic version number assigned: {version_number}")
-        logger.info(f"Atomic version number assigned: {version_number} for student {student_id} in {academic_year}")
+        # Wrap the database operations in retry logic
+        async def _create_rag_iep_operation():
+            try:
+                # Get next version number atomically
+                version_number = await self.repository.get_next_version_number(
+                    student_id, academic_year
+                )
+                logger.error(f"[DEBUG] Atomic version number assigned: {version_number}")
+                logger.info(f"Atomic version number assigned: {version_number} for student {student_id} in {academic_year}")
+                
+                # Get parent version if this is not the first version
+                parent_version_id = None
+                if version_number > 1:
+                    latest_iep = await self.repository.get_latest_iep_version(
+                        student_id, academic_year
+                    )
+                    if latest_iep:
+                        parent_version_id = latest_iep["id"]
+                        logger.error(f"[DEBUG] Parent version ID: {parent_version_id}")
+                else:
+                    logger.error(f"[DEBUG] First IEP version for student {student_id} in {academic_year}")
+                
+                # Create IEP record with proper versioning
+                iep_data = {
+                    "student_id": student_id,
+                    "template_id": template_id,
+                    "academic_year": academic_year,
+                    "status": "draft",
+                    "content": iep_content,
+                    "version": version_number,
+                    "created_by": user_id
+                }
+                
+                # Add parent version if this is not the first version
+                if parent_version_id:
+                    # Ensure parent_version_id is a UUID object, not string
+                    if isinstance(parent_version_id, str):
+                        from uuid import UUID
+                        iep_data["parent_version_id"] = UUID(parent_version_id)
+                    else:
+                        iep_data["parent_version_id"] = parent_version_id
+                
+                logger.error(f"[DEBUG] About to create IEP with version: {version_number}")
+                # Create the IEP
+                iep = await self.repository.create_iep(iep_data)
+                logger.error(f"[DEBUG] IEP created successfully with ID: {iep['id']}, version: {version_number}")
+                return iep
+                
+            except Exception as e:
+                # Convert database exceptions to retryable errors when appropriate
+                converted_exception = ConflictDetector.convert_to_retryable_error(e)
+                raise converted_exception
         
-        # Get parent version if this is not the first version
-        parent_version_id = None
-        if version_number > 1:
-            latest_iep = await self.repository.get_latest_iep_version(
-                student_id, academic_year
-            )
-            if latest_iep:
-                parent_version_id = latest_iep["id"]
-                logger.error(f"[DEBUG] Parent version ID: {parent_version_id}")
-        else:
-            logger.error(f"[DEBUG] First IEP version for student {student_id} in {academic_year}")
-        
-        # Create IEP record with proper versioning
-        iep_data = {
-            "student_id": student_id,
-            "template_id": template_id,
-            "academic_year": academic_year,
-            "status": "draft",
-            "content": iep_content,
-            "version": version_number,
-            "created_by": user_id
-        }
-        
-        # Add parent version if this is not the first version
-        if parent_version_id:
-            iep_data["parent_version_id"] = parent_version_id
-        
-        logger.error(f"[DEBUG] About to create IEP with version: {version_number}")
-        # Create the IEP
-        iep = await self.repository.create_iep(iep_data)
-        logger.error(f"[DEBUG] IEP created successfully with ID: {iep['id']}, version: {version_number}")
+        # Execute with retry mechanism
+        iep = await retry_iep_operation(_create_rag_iep_operation)
         
         # 5. Create goals if provided (outside transaction for performance)
         if initial_data.get("goals"):
@@ -127,6 +145,97 @@ class IEPService:
         await self._index_iep_content(iep)
         
         return iep
+    
+    async def create_iep(
+        self,
+        student_id: UUID,
+        academic_year: str,
+        initial_data: Dict[str, Any],
+        user_id: UUID,
+        template_id: Optional[UUID] = None
+    ) -> Dict[str, Any]:
+        """Create new IEP without RAG generation (simple version) with retry mechanism"""
+        
+        async def _create_iep_operation():
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Creating simple IEP for student {student_id}, academic year {academic_year}")
+            
+            try:
+                # Get next version number atomically
+                version_number = await self.repository.get_next_version_number(
+                    student_id, academic_year
+                )
+                logger.info(f"Atomic version number assigned: {version_number} for student {student_id} in {academic_year}")
+                
+                # Get parent version if this is not the first version
+                parent_version_id = None
+                if version_number > 1:
+                    latest_iep = await self.repository.get_latest_iep_version(
+                        student_id, academic_year
+                    )
+                    if latest_iep:
+                        parent_version_id = latest_iep["id"]
+                        logger.info(f"Parent version ID: {parent_version_id}")
+                else:
+                    logger.info(f"First IEP version for student {student_id} in {academic_year}")
+                
+                # Create IEP record with proper versioning
+                iep_data = {
+                    "student_id": student_id,
+                    "template_id": template_id,
+                    "academic_year": academic_year,
+                    "status": "draft",
+                    "content": initial_data.get("content", {}),
+                    "meeting_date": initial_data.get("meeting_date"),
+                    "effective_date": initial_data.get("effective_date"),
+                    "review_date": initial_data.get("review_date"),
+                    "version": version_number,
+                    "created_by": user_id
+                }
+                
+                # Add parent version if this is not the first version
+                if parent_version_id:
+                    # Ensure parent_version_id is a UUID object, not string
+                    if isinstance(parent_version_id, str):
+                        from uuid import UUID
+                        iep_data["parent_version_id"] = UUID(parent_version_id)
+                    else:
+                        iep_data["parent_version_id"] = parent_version_id
+                
+                logger.info(f"About to create IEP with version: {version_number}")
+                # Create the IEP
+                iep = await self.repository.create_iep(iep_data)
+                logger.info(f"IEP created successfully with ID: {iep['id']}, version: {version_number}")
+                
+                # Create goals if provided
+                if initial_data.get("goals"):
+                    for goal_data in initial_data["goals"]:
+                        await self.repository.create_iep_goal({
+                            "iep_id": iep["id"],
+                            **goal_data
+                        })
+                
+                # Create audit log
+                if self.audit_client:
+                    await self.audit_client.log_action(
+                        entity_type="iep",
+                        entity_id=iep["id"],
+                        action="create",
+                        user_id=user_id,
+                        user_role="system",
+                        changes={"initial_creation": True, "version": version_number}
+                    )
+                
+                return iep
+                
+            except Exception as e:
+                # Convert database exceptions to retryable errors when appropriate
+                converted_exception = ConflictDetector.convert_to_retryable_error(e)
+                raise converted_exception
+        
+        # Use retry mechanism for the entire operation
+        return await retry_iep_operation(_create_iep_operation)
     
     async def update_iep_with_versioning(
         self,

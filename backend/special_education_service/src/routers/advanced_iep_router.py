@@ -1,18 +1,19 @@
 """Advanced IEP operations with RAG integration"""
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 import logging
 
-from ..database import get_db
+from ..database import get_db, get_request_scoped_db
+from ..middleware.session_middleware import get_request_session
 from ..repositories.iep_repository import IEPRepository
 from ..repositories.pl_repository import PLRepository
 from ..services.iep_service import IEPService
 from ..services.user_adapter import UserAdapter
 from ..rag.iep_generator import IEPGenerator
 from ..schemas.iep_schemas import (
-    IEPCreate, IEPResponse, IEPGenerateSection
+    IEPCreate, IEPCreateWithRAG, IEPResponse, IEPGenerateSection
 )
 from common.src.config import get_settings
 from common.src.vector_store import VectorStore
@@ -51,8 +52,9 @@ else:
 
 iep_generator = IEPGenerator(vector_store=vector_store, settings=settings)
 
-async def get_iep_service(db: AsyncSession = Depends(get_db)) -> IEPService:
-    """Dependency to get IEP service with repositories"""
+async def get_iep_service(request: Request) -> IEPService:
+    """Dependency to get IEP service with request-scoped session"""
+    db = await get_request_session(request)
     iep_repo = IEPRepository(db)
     pl_repo = PLRepository(db)
     
@@ -71,7 +73,7 @@ async def get_iep_service(db: AsyncSession = Depends(get_db)) -> IEPService:
 
 @router.post("/create-with-rag", response_model=IEPResponse, status_code=status.HTTP_201_CREATED)
 async def create_iep_with_rag(
-    iep_data: IEPCreate,
+    iep_data: IEPCreateWithRAG,
     current_user_id: int = Query(..., description="Current user's auth ID"),
     current_user_role: str = Query("teacher", description="Current user's role"),
     iep_service: IEPService = Depends(get_iep_service)
@@ -100,13 +102,9 @@ async def create_iep_with_rag(
             user_role=current_user_role
         )
         
-        # Enrich with user information
-        enriched_data = created_iep.copy()
-        if created_iep.get("created_by_auth_id"):
-            user = await user_adapter.resolve_user(created_iep["created_by_auth_id"])
-            enriched_data["created_by_user"] = user
-        
-        return IEPResponse(**enriched_data)
+        # Return IEP response without user enrichment to avoid greenlet issues
+        # User enrichment can be done by frontend via separate API calls if needed
+        return IEPResponse(**created_iep)
         
     except ValueError as e:
         raise HTTPException(

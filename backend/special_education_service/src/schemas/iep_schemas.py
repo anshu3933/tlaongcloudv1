@@ -85,6 +85,17 @@ class IEPCreate(IEPBase):
         """Ensure goals list is valid if provided"""
         return [goal for goal in v if goal.goal_text.strip()]
 
+class IEPCreateWithRAG(IEPBase):
+    """Schema for creating a new IEP with RAG generation (requires template)"""
+    student_id: UUID
+    template_id: UUID  # Required for RAG generation
+    goals: List[IEPGoalCreate] = Field(default_factory=list, description="Initial goals")
+    
+    @validator('goals')
+    def validate_goals_not_empty_if_provided(cls, v):
+        """Ensure goals list is valid if provided"""
+        return [goal for goal in v if goal.goal_text.strip()]
+
 class IEPUpdate(BaseModel):
     """Schema for updating an IEP"""
     academic_year: Optional[str] = Field(None, pattern=r"^\d{4}-\d{4}$")

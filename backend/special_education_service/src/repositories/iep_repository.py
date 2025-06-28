@@ -2,9 +2,10 @@
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, and_, desc, func
+from sqlalchemy import select, update, and_, desc, func, text
 from sqlalchemy.orm import selectinload, joinedload
 from datetime import datetime
+import logging
 
 from ..models.special_education_models import (
     IEP, IEPGoal, IEPTemplate, IEPStatus, GoalStatus
@@ -13,9 +14,57 @@ from ..models.special_education_models import (
 class IEPRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
+        self.logger = logging.getLogger(__name__)
     
     async def get_next_version_number(self, student_id: UUID, academic_year: str) -> int:
-        """Get the next available version number atomically within transaction"""
+        """Get the next available version number atomically
+        
+        Uses PostgreSQL advisory locks for production, SELECT FOR UPDATE for SQLite.
+        """
+        # Check if we're using PostgreSQL (advisory locks) or SQLite (row locks)
+        db_url = str(self.session.bind.url)
+        is_postgresql = not db_url.startswith('sqlite')
+        
+        if is_postgresql:
+            return await self._get_next_version_postgresql(student_id, academic_year)
+        else:
+            return await self._get_next_version_sqlite(student_id, academic_year)
+    
+    async def _get_next_version_postgresql(self, student_id: UUID, academic_year: str) -> int:
+        """PostgreSQL implementation using advisory locks"""
+        # Create a unique lock key from student_id and academic_year hash
+        lock_key = abs(hash(f"{student_id}:{academic_year}")) % (2**31)
+        
+        try:
+            # Acquire advisory lock to prevent concurrent version conflicts
+            await self.session.execute(text("SELECT pg_advisory_lock(:lock_key)"), {"lock_key": lock_key})
+            
+            self.logger.info(f"Advisory lock acquired for student {student_id}, academic year {academic_year}")
+            
+            # Now safely get the maximum version
+            query = select(func.max(IEP.version)).where(
+                and_(
+                    IEP.student_id == student_id,
+                    IEP.academic_year == academic_year
+                )
+            )
+            
+            result = await self.session.execute(query)
+            max_version = result.scalar()
+            next_version = (max_version or 0) + 1
+            
+            self.logger.info(f"Next version number: {next_version} for student {student_id}")
+            return next_version
+            
+        finally:
+            # Always release the advisory lock
+            await self.session.execute(text("SELECT pg_advisory_unlock(:lock_key)"), {"lock_key": lock_key})
+            self.logger.info(f"Advisory lock released for student {student_id}, academic year {academic_year}")
+    
+    async def _get_next_version_sqlite(self, student_id: UUID, academic_year: str) -> int:
+        """SQLite implementation using SELECT FOR UPDATE (row-level locking)"""
+        self.logger.info(f"Using SQLite row-level locking for student {student_id}, academic year {academic_year}")
+        
         # Use SELECT FOR UPDATE to lock the rows and prevent race conditions
         query = select(func.max(IEP.version)).where(
             and_(
@@ -26,9 +75,10 @@ class IEPRepository:
         
         result = await self.session.execute(query)
         max_version = result.scalar()
+        next_version = (max_version or 0) + 1
         
-        # Return next version number (1 if no existing IEPs)
-        return (max_version or 0) + 1
+        self.logger.info(f"Next version number: {next_version} for student {student_id}")
+        return next_version
     
     async def get_latest_iep_version(self, student_id: UUID, academic_year: str) -> Optional[dict]:
         """Get the latest IEP version for a student in an academic year"""
@@ -59,7 +109,7 @@ class IEPRepository:
             meeting_date=iep_data.get("meeting_date"),
             effective_date=iep_data.get("effective_date"),
             review_date=iep_data.get("review_date"),
-            version=iep_data.get("version", 1),
+            version=iep_data["version"],  # Version must be provided, no default
             parent_version_id=iep_data.get("parent_version_id"),
             created_by_auth_id=iep_data["created_by"]
         )
@@ -84,10 +134,18 @@ class IEPRepository:
                 )
                 self.session.add(goal)
         
+        await self.session.flush()  # Flush to get the ID without committing yet
+        
+        # Refresh the IEP object to get all data
+        await self.session.refresh(iep)
+        
+        # Get the result as dict before committing (within same transaction)
+        result = self._iep_to_dict(iep, include_goals=True)
+        
+        # Now commit the transaction
         await self.session.commit()
         
-        # Reload the IEP with goals to ensure all relationships are loaded
-        return await self.get_iep(iep.id, include_goals=True)
+        return result
     
     async def get_iep(self, iep_id: UUID, include_goals: bool = True) -> Optional[dict]:
         """Get IEP by ID with optional goals"""

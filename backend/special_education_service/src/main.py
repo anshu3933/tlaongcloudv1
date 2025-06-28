@@ -5,8 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from .database import create_tables, init_database, check_database_connection
-from .routers import iep_router, student_router, template_router, dashboard_router, observability_router
+from .routers import iep_router, student_router, template_router, dashboard_router, observability_router, monitoring_router
 from .middleware.error_handler import ErrorHandlerMiddleware, add_request_id_middleware
+from .middleware.session_middleware import RequestScopedSessionMiddleware
+from .monitoring.middleware import MonitoringMiddleware
+from .monitoring.health_monitor import health_monitor
 from common.src.config import get_settings
 
 # Configure logging
@@ -31,10 +34,18 @@ async def lifespan(app: FastAPI):
     # Initialize with default data
     await init_database()
     
+    # Start health monitoring
+    await health_monitor.start()
+    logger.info("Health monitoring started")
+    
     logger.info("Special Education Service started successfully")
     yield
     
     logger.info("Shutting down Special Education Service...")
+    
+    # Stop health monitoring
+    await health_monitor.stop()
+    logger.info("Health monitoring stopped")
 
 app = FastAPI(
     title="Special Education Service",
@@ -43,7 +54,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add middleware
+# Add middleware (order matters - session middleware should be early)
+app.add_middleware(MonitoringMiddleware)  # Monitor all requests
+app.add_middleware(RequestScopedSessionMiddleware)
 app.middleware("http")(add_request_id_middleware)
 app.add_middleware(ErrorHandlerMiddleware)
 
@@ -62,6 +75,7 @@ app.include_router(student_router.router)
 app.include_router(template_router.router)
 app.include_router(dashboard_router.router)
 app.include_router(observability_router.router)
+app.include_router(monitoring_router.router)
 
 # Include advanced features
 from .routers import advanced_iep_router

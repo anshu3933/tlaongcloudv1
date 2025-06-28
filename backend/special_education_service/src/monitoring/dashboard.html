@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Special Education Service - Monitoring Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .card h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #007acc;
+            padding-bottom: 10px;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+        }
+        .metric-value {
+            font-weight: bold;
+            color: #007acc;
+        }
+        .status-healthy { color: #28a745; }
+        .status-degraded { color: #ffc107; }
+        .status-unhealthy { color: #dc3545; }
+        .status-unknown { color: #6c757d; }
+        .alert {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+        .alert-critical {
+            background-color: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        .alert-warning {
+            background-color: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+        .refresh-button {
+            background-color: #007acc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        .refresh-button:hover {
+            background-color: #005a9e;
+        }
+        .timestamp {
+            font-size: 0.9em;
+            color: #666;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Special Education Service - Monitoring Dashboard</h1>
+            <button class="refresh-button" onclick="refreshDashboard()">Refresh Data</button>
+            <div id="last-updated" class="timestamp"></div>
+        </div>
+
+        <div id="loading" class="loading">Loading monitoring data...</div>
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div id="dashboard" style="display: none;">
+            <!-- Health Status -->
+            <div class="card">
+                <h3>System Health</h3>
+                <div class="metric">
+                    <span>Overall Status:</span>
+                    <span id="health-status" class="metric-value">Unknown</span>
+                </div>
+                <div class="metric">
+                    <span>Database:</span>
+                    <span id="db-status" class="metric-value">Unknown</span>
+                </div>
+                <div class="metric">
+                    <span>Memory Usage:</span>
+                    <span id="memory-usage" class="metric-value">- MB</span>
+                </div>
+                <div class="metric">
+                    <span>Active Sessions:</span>
+                    <span id="active-sessions" class="metric-value">0</span>
+                </div>
+                <div class="metric">
+                    <span>Active Operations:</span>
+                    <span id="active-operations" class="metric-value">0</span>
+                </div>
+            </div>
+
+            <!-- Performance Metrics -->
+            <div class="card">
+                <h3>Performance (Last Hour)</h3>
+                <div class="metric">
+                    <span>Total Operations:</span>
+                    <span id="total-operations" class="metric-value">0</span>
+                </div>
+                <div class="metric">
+                    <span>Success Rate:</span>
+                    <span id="success-rate" class="metric-value">100%</span>
+                </div>
+                <div class="metric">
+                    <span>Average Response Time:</span>
+                    <span id="avg-response-time" class="metric-value">0ms</span>
+                </div>
+                <div class="metric">
+                    <span>95th Percentile:</span>
+                    <span id="p95-response-time" class="metric-value">0ms</span>
+                </div>
+                <div class="metric">
+                    <span>Operations/min:</span>
+                    <span id="operations-per-minute" class="metric-value">0</span>
+                </div>
+            </div>
+
+            <!-- Version Conflicts -->
+            <div class="card">
+                <h3>Version Conflicts (Last Hour)</h3>
+                <div class="metric">
+                    <span>Total Conflicts:</span>
+                    <span id="total-conflicts" class="metric-value">0</span>
+                </div>
+                <div class="metric">
+                    <span>Conflict Rate/hour:</span>
+                    <span id="conflict-rate" class="metric-value">0</span>
+                </div>
+                <div class="metric">
+                    <span>Average Retries:</span>
+                    <span id="avg-retries" class="metric-value">0</span>
+                </div>
+                <div class="metric">
+                    <span>Average Resolution Time:</span>
+                    <span id="avg-resolution-time" class="metric-value">0ms</span>
+                </div>
+            </div>
+
+            <!-- Recent Alerts -->
+            <div class="card">
+                <h3>Active Alerts</h3>
+                <div id="alerts-container">
+                    <p>No active alerts</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let autoRefresh = true;
+        const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
+
+        async function fetchMonitoringData() {
+            try {
+                const response = await fetch('/monitoring/metrics');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Failed to fetch monitoring data:', error);
+                throw error;
+            }
+        }
+
+        async function fetchAlerts() {
+            try {
+                const response = await fetch('/monitoring/alerts');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Failed to fetch alerts:', error);
+                return { alerts: [], alert_count: 0 };
+            }
+        }
+
+        function updateHealthStatus(health) {
+            const statusElement = document.getElementById('health-status');
+            statusElement.textContent = health.status || 'unknown';
+            statusElement.className = `metric-value status-${health.status || 'unknown'}`;
+
+            if (health.metrics) {
+                document.getElementById('memory-usage').textContent = 
+                    `${Math.round(health.metrics.memory_usage_mb || 0)} MB`;
+                document.getElementById('active-sessions').textContent = 
+                    health.metrics.active_sessions || 0;
+                document.getElementById('active-operations').textContent = 
+                    health.metrics.pending_operations || 0;
+            }
+        }
+
+        function updatePerformance(performance) {
+            document.getElementById('total-operations').textContent = 
+                performance.total_operations || 0;
+            document.getElementById('success-rate').textContent = 
+                `${(performance.success_rate || 100).toFixed(1)}%`;
+            document.getElementById('avg-response-time').textContent = 
+                `${Math.round(performance.avg_duration_ms || 0)}ms`;
+            document.getElementById('p95-response-time').textContent = 
+                `${Math.round(performance.p95_duration_ms || 0)}ms`;
+            document.getElementById('operations-per-minute').textContent = 
+                (performance.operations_per_minute || 0).toFixed(1);
+        }
+
+        function updateConflicts(conflicts) {
+            document.getElementById('total-conflicts').textContent = 
+                conflicts.total_conflicts || 0;
+            document.getElementById('conflict-rate').textContent = 
+                (conflicts.conflict_rate_per_hour || 0).toFixed(1);
+            document.getElementById('avg-retries').textContent = 
+                (conflicts.avg_retry_count || 0).toFixed(1);
+            document.getElementById('avg-resolution-time').textContent = 
+                `${Math.round(conflicts.avg_resolution_time_ms || 0)}ms`;
+        }
+
+        function updateAlerts(alertsData) {
+            const container = document.getElementById('alerts-container');
+            const alerts = alertsData.alerts || [];
+
+            if (alerts.length === 0) {
+                container.innerHTML = '<p>No active alerts</p>';
+                return;
+            }
+
+            container.innerHTML = alerts.map(alert => `
+                <div class="alert alert-${alert.level}">
+                    <strong>${alert.type.toUpperCase()}:</strong> ${alert.message}
+                    <br><small>${new Date(alert.timestamp).toLocaleString()}</small>
+                </div>
+            `).join('');
+        }
+
+        async function refreshDashboard() {
+            const loadingElement = document.getElementById('loading');
+            const errorElement = document.getElementById('error');
+            const dashboardElement = document.getElementById('dashboard');
+
+            try {
+                loadingElement.style.display = 'block';
+                errorElement.style.display = 'none';
+                dashboardElement.style.display = 'none';
+
+                const [monitoringData, alertsData] = await Promise.all([
+                    fetchMonitoringData(),
+                    fetchAlerts()
+                ]);
+
+                // Update all dashboard sections
+                updateHealthStatus(monitoringData.health || {});
+                updatePerformance(monitoringData.performance || {});
+                updateConflicts(monitoringData.conflicts || {});
+                updateAlerts(alertsData);
+
+                // Update timestamp
+                document.getElementById('last-updated').textContent = 
+                    `Last updated: ${new Date().toLocaleString()}`;
+
+                // Show dashboard
+                loadingElement.style.display = 'none';
+                dashboardElement.style.display = 'block';
+
+            } catch (error) {
+                console.error('Dashboard refresh failed:', error);
+                loadingElement.style.display = 'none';
+                errorElement.style.display = 'block';
+                errorElement.textContent = `Failed to load monitoring data: ${error.message}`;
+            }
+        }
+
+        // Auto-refresh setup
+        function startAutoRefresh() {
+            if (autoRefresh) {
+                setTimeout(() => {
+                    refreshDashboard().then(() => {
+                        if (autoRefresh) {
+                            startAutoRefresh();
+                        }
+                    });
+                }, AUTO_REFRESH_INTERVAL);
+            }
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshDashboard().then(() => {
+                startAutoRefresh();
+            });
+        });
+
+        // Handle page visibility change
+        document.addEventListener('visibilitychange', () => {
+            autoRefresh = !document.hidden;
+            if (autoRefresh) {
+                refreshDashboard().then(() => {
+                    startAutoRefresh();
+                });
+            }
+        });
+    </script>
+</body>
+</html>
