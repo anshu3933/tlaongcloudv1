@@ -133,43 +133,48 @@ async def create_iep_with_rag(
         "approved_by_auth_id": None,
         "goals": []
     }
+    
+    # Return the demo response for now
+    return demo_response
         
         # TODO: Once JSON serialization issues are resolved, uncomment this section:
-        # # Prepare initial data from request
-        # initial_data = {
-        #     "content": iep_data.content,
-        #     "meeting_date": iep_data.meeting_date,
-        #     "effective_date": iep_data.effective_date,
-        #     "review_date": iep_data.review_date
-        # }
-        # 
-        # # Add goals if provided
-        # if iep_data.goals:
-        #     initial_data["goals"] = [goal.model_dump() for goal in iep_data.goals]
-        # 
-        # # Create IEP with RAG
-        # created_iep = await iep_service.create_iep_with_rag(
-        #     student_id=iep_data.student_id,
-        #     template_id=iep_data.template_id,
-        #     academic_year=iep_data.academic_year,
-        #     initial_data=initial_data,
-        #     user_id=current_user_id,
-        #     user_role=current_user_role
-        # )
+        # try:
+        #     # Prepare initial data from request
+        #     initial_data = {
+        #         "content": iep_data.content,
+        #         "meeting_date": iep_data.meeting_date,
+        #         "effective_date": iep_data.effective_date,
+        #         "review_date": iep_data.review_date
+        #     }
+        #     
+        #     # Add goals if provided
+        #     if iep_data.goals:
+        #         initial_data["goals"] = [goal.model_dump() for goal in iep_data.goals]
+        #     
+        #     # Create IEP with RAG
+        #     created_iep = await iep_service.create_iep_with_rag(
+        #         student_id=iep_data.student_id,
+        #         template_id=iep_data.template_id,
+        #         academic_year=iep_data.academic_year,
+        #         initial_data=initial_data,
+        #         user_id=current_user_id,
+        #         user_role=current_user_role
+        #     )
+        #     return created_iep
         
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        import traceback
-        logger.error(f"Error creating IEP with RAG: {e}")
-        logger.error(f"Full traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create IEP with RAG"
-        )
+        # except ValueError as e:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail=str(e)
+        #     )
+        # except Exception as e:
+        #     import traceback
+        #     logger.error(f"Error creating IEP with RAG: {e}")
+        #     logger.error(f"Full traceback: {traceback.format_exc()}")
+        #     raise HTTPException(
+        #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        #         detail="Failed to create IEP with RAG"
+        #     )
 
 @router.post("/{iep_id}/generate-section", response_model=Dict[str, Any])
 async def generate_iep_section(

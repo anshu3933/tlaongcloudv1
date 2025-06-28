@@ -93,9 +93,9 @@ class IEPCreate(IEPBase):
         return [goal for goal in v if goal.goal_text.strip()]
 
 class IEPCreateWithRAG(IEPBase):
-    """Schema for creating a new IEP with RAG generation (requires template)"""
+    """Schema for creating a new IEP with RAG generation (template optional for demo)"""
     student_id: UUID
-    template_id: UUID  # Required for RAG generation
+    template_id: Optional[UUID] = None  # Optional for demo mode
     goals: List[IEPGoalCreate] = Field(default_factory=list, description="Initial goals")
     
     @validator('goals')

@@ -10,6 +10,15 @@ from pydantic import ValidationError
 import uuid
 
 from ..schemas.common_schemas import ErrorResponse, ErrorDetail
+from datetime import datetime
+import json
+
+# Custom JSON encoder to handle datetime objects
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +58,14 @@ class ErrorHandlerMiddleware:
         
         if isinstance(exc, HTTPException):
             # FastAPI HTTP exceptions - already handled
+            content = ErrorResponse(
+                message=exc.detail,
+                metadata={"request_id": request_id}
+            ).model_dump()
+            
             return JSONResponse(
                 status_code=exc.status_code,
-                content=ErrorResponse(
-                    message=exc.detail,
-                    metadata={"request_id": request_id}
-                ).model_dump()
+                content=json.loads(json.dumps(content, cls=CustomJSONEncoder))
             )
         
         elif isinstance(exc, ValidationError):
@@ -69,13 +80,15 @@ class ErrorHandlerMiddleware:
             
             logger.warning(f"Validation error (request {request_id}): {exc}")
             
+            content = ErrorResponse(
+                message="Validation failed",
+                details=details,
+                metadata={"request_id": request_id}
+            ).model_dump()
+            
             return JSONResponse(
                 status_code=422,
-                content=ErrorResponse(
-                    message="Validation failed",
-                    details=details,
-                    metadata={"request_id": request_id}
-                ).model_dump()
+                content=json.loads(json.dumps(content, cls=CustomJSONEncoder))
             )
         
         elif isinstance(exc, IntegrityError):
@@ -91,26 +104,30 @@ class ErrorHandlerMiddleware:
             elif "NOT NULL constraint failed" in str(exc):
                 error_msg = "Required field is missing"
             
+            content = ErrorResponse(
+                message=error_msg,
+                details=[ErrorDetail(message=str(exc.orig), code="integrity_error")],
+                metadata={"request_id": request_id}
+            ).model_dump()
+            
             return JSONResponse(
                 status_code=400,
-                content=ErrorResponse(
-                    message=error_msg,
-                    details=[ErrorDetail(message=str(exc.orig), code="integrity_error")],
-                    metadata={"request_id": request_id}
-                ).model_dump()
+                content=json.loads(json.dumps(content, cls=CustomJSONEncoder))
             )
         
         elif isinstance(exc, SQLAlchemyError):
             # Other database errors
             logger.error(f"Database error (request {request_id}): {exc}")
             
+            content = ErrorResponse(
+                message="Database operation failed",
+                details=[ErrorDetail(message="Internal database error", code="database_error")],
+                metadata={"request_id": request_id}
+            ).model_dump()
+            
             return JSONResponse(
                 status_code=500,
-                content=ErrorResponse(
-                    message="Database operation failed",
-                    details=[ErrorDetail(message="Internal database error", code="database_error")],
-                    metadata={"request_id": request_id}
-                ).model_dump()
+                content=json.loads(json.dumps(content, cls=CustomJSONEncoder))
             )
         
         else:
@@ -118,13 +135,15 @@ class ErrorHandlerMiddleware:
             logger.error(f"Unexpected error (request {request_id}): {exc}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             
+            content = ErrorResponse(
+                message="Internal server error",
+                details=[ErrorDetail(message="An unexpected error occurred", code="internal_error")],
+                metadata={"request_id": request_id}
+            ).model_dump()
+            
             return JSONResponse(
                 status_code=500,
-                content=ErrorResponse(
-                    message="Internal server error",
-                    details=[ErrorDetail(message="An unexpected error occurred", code="internal_error")],
-                    metadata={"request_id": request_id}
-                ).model_dump()
+                content=json.loads(json.dumps(content, cls=CustomJSONEncoder))
             )
     
     async def _send_error_response(self, response: JSONResponse, send: Callable):

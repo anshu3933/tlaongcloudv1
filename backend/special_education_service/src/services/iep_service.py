@@ -116,10 +116,12 @@ class IEPService:
                         student_id, academic_year
                     )
                     if latest_iep:
-                        parent_version_id = latest_iep["id"]
-                        logger.error(f"[DEBUG] Parent version ID: {parent_version_id}")
+                        # Convert string UUID back to UUID object for database
+                        from uuid import UUID
+                        parent_version_id = UUID(latest_iep["id"])
+                        logger.info(f"Parent version ID: {parent_version_id}")
                 else:
-                    logger.error(f"[DEBUG] First IEP version for student {student_id} in {academic_year}")
+                    logger.info(f"First IEP version for student {student_id} in {academic_year}")
                 
                 # Create IEP record with proper versioning
                 iep_data = {
