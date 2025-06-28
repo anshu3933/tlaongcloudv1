@@ -4,7 +4,7 @@ IMPORTANT: For atomic operations and version constraint safety, use the
 request-scoped session middleware instead of the legacy get_db dependency.
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import text
+from sqlalchemy import text, select
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import logging
