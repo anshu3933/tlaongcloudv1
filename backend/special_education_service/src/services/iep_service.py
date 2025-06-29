@@ -222,18 +222,56 @@ class IEPService:
                 "created_by": user_id
             }
             
-            # Handle date fields safely
+            # Handle date fields safely - convert strings to date objects for SQLite
+            from datetime import date, datetime
+            
             if initial_data.get("meeting_date"):
                 meeting_date = initial_data["meeting_date"]
-                iep_data["meeting_date"] = meeting_date.strftime("%Y-%m-%d") if hasattr(meeting_date, 'strftime') else str(meeting_date)
+                if isinstance(meeting_date, str):
+                    try:
+                        # Parse string date to date object
+                        iep_data["meeting_date"] = datetime.strptime(meeting_date, "%Y-%m-%d").date()
+                    except ValueError:
+                        logger.warning(f"Invalid meeting_date format: {meeting_date}")
+                        iep_data["meeting_date"] = None
+                elif hasattr(meeting_date, 'date'):
+                    # It's a datetime, extract date part
+                    iep_data["meeting_date"] = meeting_date.date()
+                else:
+                    # It's already a date object
+                    iep_data["meeting_date"] = meeting_date
             
             if initial_data.get("effective_date"):
                 effective_date = initial_data["effective_date"]
-                iep_data["effective_date"] = effective_date.strftime("%Y-%m-%d") if hasattr(effective_date, 'strftime') else str(effective_date)
+                if isinstance(effective_date, str):
+                    try:
+                        # Parse string date to date object
+                        iep_data["effective_date"] = datetime.strptime(effective_date, "%Y-%m-%d").date()
+                    except ValueError:
+                        logger.warning(f"Invalid effective_date format: {effective_date}")
+                        iep_data["effective_date"] = None
+                elif hasattr(effective_date, 'date'):
+                    # It's a datetime, extract date part
+                    iep_data["effective_date"] = effective_date.date()
+                else:
+                    # It's already a date object
+                    iep_data["effective_date"] = effective_date
             
             if initial_data.get("review_date"):
                 review_date = initial_data["review_date"]
-                iep_data["review_date"] = review_date.strftime("%Y-%m-%d") if hasattr(review_date, 'strftime') else str(review_date)
+                if isinstance(review_date, str):
+                    try:
+                        # Parse string date to date object
+                        iep_data["review_date"] = datetime.strptime(review_date, "%Y-%m-%d").date()
+                    except ValueError:
+                        logger.warning(f"Invalid review_date format: {review_date}")
+                        iep_data["review_date"] = None
+                elif hasattr(review_date, 'date'):
+                    # It's a datetime, extract date part
+                    iep_data["review_date"] = review_date.date()
+                else:
+                    # It's already a date object
+                    iep_data["review_date"] = review_date
             
             # Add parent version if this is not the first version
             if parent_version_id:
@@ -317,12 +355,60 @@ class IEPService:
                     "academic_year": academic_year,
                     "status": "draft",
                     "content": initial_data.get("content", {}),
-                    "meeting_date": initial_data.get("meeting_date"),
-                    "effective_date": initial_data.get("effective_date"),
-                    "review_date": initial_data.get("review_date"),
                     "version": version_number,
                     "created_by": user_id
                 }
+                
+                # Handle date fields safely - convert strings to date objects for SQLite
+                from datetime import date, datetime
+                
+                if initial_data.get("meeting_date"):
+                    meeting_date = initial_data["meeting_date"]
+                    if isinstance(meeting_date, str):
+                        try:
+                            # Parse string date to date object
+                            iep_data["meeting_date"] = datetime.strptime(meeting_date, "%Y-%m-%d").date()
+                        except ValueError:
+                            logger.warning(f"Invalid meeting_date format: {meeting_date}")
+                            iep_data["meeting_date"] = None
+                    elif hasattr(meeting_date, 'date'):
+                        # It's a datetime, extract date part
+                        iep_data["meeting_date"] = meeting_date.date()
+                    else:
+                        # It's already a date object
+                        iep_data["meeting_date"] = meeting_date
+                
+                if initial_data.get("effective_date"):
+                    effective_date = initial_data["effective_date"]
+                    if isinstance(effective_date, str):
+                        try:
+                            # Parse string date to date object
+                            iep_data["effective_date"] = datetime.strptime(effective_date, "%Y-%m-%d").date()
+                        except ValueError:
+                            logger.warning(f"Invalid effective_date format: {effective_date}")
+                            iep_data["effective_date"] = None
+                    elif hasattr(effective_date, 'date'):
+                        # It's a datetime, extract date part
+                        iep_data["effective_date"] = effective_date.date()
+                    else:
+                        # It's already a date object
+                        iep_data["effective_date"] = effective_date
+                
+                if initial_data.get("review_date"):
+                    review_date = initial_data["review_date"]
+                    if isinstance(review_date, str):
+                        try:
+                            # Parse string date to date object
+                            iep_data["review_date"] = datetime.strptime(review_date, "%Y-%m-%d").date()
+                        except ValueError:
+                            logger.warning(f"Invalid review_date format: {review_date}")
+                            iep_data["review_date"] = None
+                    elif hasattr(review_date, 'date'):
+                        # It's a datetime, extract date part
+                        iep_data["review_date"] = review_date.date()
+                    else:
+                        # It's already a date object
+                        iep_data["review_date"] = review_date
                 
                 # Add parent version if this is not the first version
                 if parent_version_id:

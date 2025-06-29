@@ -77,8 +77,65 @@ async def get_request_scoped_db(request) -> AsyncSession:
     This ensures all operations within a single HTTP request use the same
     database session, preventing race conditions and ensuring atomicity.
     """
-    from .middleware.session_middleware import get_request_session
-    return await get_request_session(request)
+    # Use request state instead of importing to avoid circular dependency
+    db_session = getattr(request.state, 'db_session', None)
+    if db_session is None:
+        raise RuntimeError("No database session found in request state. Ensure RequestScopedSessionMiddleware is properly configured.")
+    return db_session
+
+
+async def get_async_session():
+    """Get async database session for use outside of HTTP requests
+    
+    This is used by workers and background tasks that don't have request context.
+    Note: This creates a new session each time, use carefully.
+    """
+    async with async_session_factory() as session:
+        try:
+            yield session
+        except Exception as e:
+            logger.error(f"Database session error: {e}")
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+async def init_db():
+    """Initialize database with WAL mode for better concurrency"""
+    async with engine.begin() as conn:
+        # Check SQLite compile options
+        result = await conn.execute(text("PRAGMA compile_options"))
+        compile_options = {row[0] for row in result}
+        logger.info(f"SQLite compile options: {compile_options}")
+        
+        # Check if UPDATE...ORDER BY...LIMIT is supported
+        has_update_order_by = 'ENABLE_UPDATE_DELETE_LIMIT' in compile_options
+        logger.info(f"SQLite UPDATE...ORDER BY support: {has_update_order_by}")
+        
+        # Enable WAL mode for better concurrent access
+        await conn.execute(text("PRAGMA journal_mode=WAL"))
+        # Single busy timeout configuration
+        await conn.execute(text("PRAGMA busy_timeout=30000"))  # 30 seconds
+        await conn.execute(text("PRAGMA synchronous=NORMAL"))
+        
+        # Optimize for concurrent reads
+        await conn.execute(text("PRAGMA cache_size=-64000"))  # 64MB cache
+        await conn.execute(text("PRAGMA temp_store=MEMORY"))
+        
+        # Verify WAL mode is enabled
+        result = await conn.execute(text("PRAGMA journal_mode"))
+        mode = result.scalar()
+        logger.info(f"SQLite journal mode: {mode}")
+        
+        if mode != "wal":
+            logger.warning("Failed to enable WAL mode, concurrency may be limited")
+        
+        # Store capabilities for later use
+        engine.dialect.sqlite_has_update_order_by = has_update_order_by
+        
+        # Monitor busy timeout hits
+        timeout_result = await conn.execute(text("PRAGMA busy_timeout"))
+        logger.info(f"Busy timeout set to: {timeout_result.scalar()}ms")
 
 async def create_tables():
     """Create all database tables"""

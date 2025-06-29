@@ -8,9 +8,9 @@ from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel, Field
 
-from common.src.config import get_settings
-from common.src.document_processor import DocumentProcessor
-from common.src.vector_store import VectorStore
+from config import get_settings
+from document_processor import DocumentProcessor
+from vector_store import VectorStore
 from .middleware.error_handler import ErrorHandlerMiddleware
 
 # Import vertexai with error handling for optional dependency

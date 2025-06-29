@@ -14,7 +14,7 @@ from vertexai.generative_models import GenerativeModel
 from google import genai
 from google.genai import types
 
-from common.src.config import get_settings
+from config import get_settings
 
 settings = get_settings()
 
@@ -23,7 +23,7 @@ http_client: Optional[httpx.AsyncClient] = None
 gemini_model: Optional[GenerativeModel] = None
 
 # Document storage directory
-DOCUMENTS_DIR = Path("/app/uploaded_documents")
+DOCUMENTS_DIR = Path("./uploaded_documents")
 DOCUMENTS_DIR.mkdir(exist_ok=True)
 
 # In-memory document registry (in production, use database)

@@ -11,6 +11,7 @@ from ..repositories.iep_repository import IEPRepository
 from ..repositories.pl_repository import PLRepository
 from ..services.iep_service import IEPService
 from ..services.user_adapter import UserAdapter
+from ..services.async_job_service import AsyncJobService
 from ..rag.iep_generator import IEPGenerator
 from ..schemas.iep_schemas import (
     IEPCreate, IEPCreateWithRAG, IEPResponse, IEPGenerateSection
@@ -76,76 +77,55 @@ async def create_iep_with_rag(
     iep_data: IEPCreateWithRAG,
     request: Request,
     current_user_id: int = Query(..., description="Current user's auth ID"),
-    current_user_role: str = Query("teacher", description="Current user's role")
+    current_user_role: str = Query("teacher", description="Current user's role"),
+    async_processing: bool = Query(False, description="Use async processing for large jobs")
 ):
     """Create IEP using RAG-powered generation"""
     
-    # Check if we should use mock mode (for testing/demo purposes)
-    import os
-    use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
+    # Check if async processing is requested
+    if async_processing:
+        logger.info(f"Using async processing for IEP generation for student {iep_data.student_id}")
+        
+        try:
+            # Import async job service
+            from ..services.async_job_service import AsyncJobService, IEPGenerationRequest
+            
+            # Use request-scoped session instead of creating new one
+            db = await get_request_session(request)
+            service = AsyncJobService(db)
+            
+            # Convert IEPCreateWithRAG to IEPGenerationRequest
+            job_request = IEPGenerationRequest(
+                student_id=str(iep_data.student_id),
+                template_id=str(iep_data.template_id) if iep_data.template_id else None,
+                academic_year=iep_data.academic_year,
+                include_previous_ieps=True,
+                include_assessments=True,
+                priority=8  # High priority for user-initiated requests
+            )
+            
+            # Submit async job
+            job_id = await service.submit_iep_generation_job(
+                request=job_request,
+                created_by_auth_id=str(current_user_id)
+            )
+            
+            # Return job tracking response
+            return {
+                "async_job": True,
+                "job_id": job_id,
+                "status": "pending",
+                "message": "IEP generation job submitted for async processing",
+                "poll_url": f"/api/v1/jobs/{job_id}",
+                "estimated_completion": "2-5 minutes"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error submitting async job: {e}")
+            # Fall back to synchronous processing
+            logger.info("Falling back to synchronous processing")
     
-    if use_mock:
-        logger.info("Using mock response for IEP creation (USE_MOCK_LLM=true)")
-        # Return working demo response without any complex dependencies
-        demo_response = {
-        "id": "demo-iep-12345",
-        "student_id": str(iep_data.student_id),
-        "template_id": str(iep_data.template_id) if iep_data.template_id else None,
-        "academic_year": iep_data.academic_year,
-        "status": "draft",
-        "content": {
-            "student_info": {
-                "name": "Demo Student",
-                "grade": "5th Grade", 
-                "disability_category": "Learning Disability"
-            },
-            "present_levels": {
-                "content": "Student demonstrates strengths in visual learning and responds well to structured activities. Areas of need include reading comprehension and written expression.",
-                "strengths": ["Visual learning", "Structured activities", "Social skills"],
-                "needs": ["Reading comprehension", "Written expression", "Math computation"]
-            },
-            "goals": [
-                {
-                    "domain": "academic",
-                    "goal_text": "Student will improve reading comprehension skills by reading grade-level texts and answering comprehension questions with 80% accuracy",
-                    "baseline": "Currently reads at 60% comprehension level",
-                    "target_criteria": "80% accuracy on comprehension assessments", 
-                    "measurement_method": "Weekly reading assessments and progress monitoring",
-                    "ai_generated": True
-                },
-                {
-                    "domain": "academic",
-                    "goal_text": "Student will demonstrate improved mathematical problem-solving skills in addition and subtraction with 75% accuracy",
-                    "baseline": "Currently solves math problems with 50% accuracy",
-                    "target_criteria": "75% accuracy on math assessments",
-                    "measurement_method": "Bi-weekly math assessments", 
-                    "ai_generated": True
-                }
-            ],
-            "services": {
-                "special_education": "Resource room support 5 hours per week",
-                "related_services": ["Speech therapy 30 min/week"],
-                "accommodations": ["Extended time", "Small group testing", "Visual aids"]
-            },
-            "ai_powered": True,
-            "generated_at": "2025-06-28T04:07:00Z"
-        },
-        "version": 1,
-        "created_at": "2025-06-28T04:07:00Z",
-        "meeting_date": str(iep_data.meeting_date) if iep_data.meeting_date else None,
-        "effective_date": str(iep_data.effective_date) if iep_data.effective_date else None,
-        "review_date": str(iep_data.review_date) if iep_data.review_date else None,
-        "created_by_auth_id": current_user_id,
-        "parent_version_id": None,
-        "approved_at": None,
-        "approved_by_auth_id": None,
-        "goals": []
-    }
-    
-        # Return the demo response for mock mode
-        return demo_response
-    
-    # Use the real LLM implementation
+    # Use synchronous real LLM implementation
     try:
         logger.info(f"Creating IEP with RAG/LLM for student {iep_data.student_id}")
         
@@ -379,4 +359,59 @@ async def find_similar_ieps(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to find similar IEPs"
+        )
+
+
+@router.get("/async-job/{job_id}")
+async def get_async_iep_job_status(
+    job_id: str,
+    request: Request,
+    current_user_id: int = Query(..., description="Current user's auth ID")
+):
+    """Get status of async IEP generation job with results"""
+    try:
+        # Get request-scoped database session
+        db = await get_request_session(request)
+        service = AsyncJobService(db)
+        
+        # Get job status
+        job_status = await service.get_job_status(job_id)
+        
+        if not job_status:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        # Return job status with IEP-specific formatting
+        response = {
+            "job_id": job_status.job_id,
+            "status": job_status.status,
+            "progress_percentage": job_status.progress_percentage,
+            "status_message": job_status.status_message,
+            "created_at": job_status.created_at,
+            "completed_at": job_status.completed_at,
+            "failed_at": job_status.failed_at
+        }
+        
+        # If completed, include the IEP data
+        if job_status.status == 'completed' and job_status.result:
+            iep_data = job_status.result.get('iep_data')
+            if iep_data:
+                response['iep'] = iep_data
+                response['message'] = "IEP generation completed successfully"
+            else:
+                response['message'] = "Job completed but no IEP data found"
+        
+        # If failed, include error details
+        elif job_status.status == 'failed' and job_status.error_details:
+            response['error'] = job_status.error_details
+            response['message'] = "IEP generation failed"
+        
+        return response
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in async job status endpoint: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to get job status"
         )

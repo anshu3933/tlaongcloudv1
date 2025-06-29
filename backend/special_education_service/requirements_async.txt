@@ -1,0 +1,11 @@
+# Additional requirements for async IEP generation system
+
+# Circuit breaker and retry
+pybreaker==1.0.2
+tenacity==8.2.3
+
+# JSON serialization
+orjson==3.9.15
+
+# Additional utilities
+python-multipart==0.0.6
