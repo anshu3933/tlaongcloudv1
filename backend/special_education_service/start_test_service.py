@@ -19,6 +19,8 @@ os.environ.update({
     "AUTH_SERVICE_URL": "http://localhost:8003",
     "MCP_SERVER_URL": "http://localhost:8001",
     "WORKFLOW_SERVICE_URL": "http://localhost:8004",
+    "USE_MOCK_LLM": "true",
+    "CORS_ORIGINS": "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://127.0.0.1:3000",
     "SMTP_ENABLED": "false",
     "SMTP_USERNAME": "test@example.com",
     "SMTP_FROM_EMAIL": "test@example.com"
@@ -30,15 +32,15 @@ if __name__ == "__main__":
     print("🚀 Starting Special Education Service for testing...")
     print("📊 Environment: development")
     print("💾 Database: SQLite (test_special_ed.db)")
-    print("🌐 URL: http://localhost:8006")
-    print("📖 Docs: http://localhost:8006/docs")
+    print("🌐 URL: http://localhost:8005")
+    print("📖 Docs: http://localhost:8005/docs")
     print("=" * 50)
     
     try:
         uvicorn.run(
             "src.main:app",
             host="0.0.0.0",
-            port=8006,
+            port=8005,
             reload=False,
             log_level="info"
         )

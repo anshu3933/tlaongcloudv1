@@ -61,9 +61,14 @@ app.middleware("http")(add_request_id_middleware)
 app.add_middleware(ErrorHandlerMiddleware)
 
 # Configure CORS
+cors_origins = settings.cors_origins if hasattr(settings, 'cors_origins') else ["*"]
+if isinstance(cors_origins, str):
+    cors_origins = [origin.strip() for origin in cors_origins.split(",")]
+logger.info(f"CORS origins configured: {cors_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins if hasattr(settings, 'cors_origins') else ["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

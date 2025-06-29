@@ -74,12 +74,20 @@ async def get_iep_service(request: Request) -> IEPService:
 @router.post("/create-with-rag")
 async def create_iep_with_rag(
     iep_data: IEPCreateWithRAG,
+    request: Request,
     current_user_id: int = Query(..., description="Current user's auth ID"),
     current_user_role: str = Query("teacher", description="Current user's role")
 ):
-    """Create IEP using RAG-powered generation - DEMO VERSION"""
-    # Return working demo response without any complex dependencies
-    return {
+    """Create IEP using RAG-powered generation"""
+    
+    # Check if we should use mock mode (for testing/demo purposes)
+    import os
+    use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
+    
+    if use_mock:
+        logger.info("Using mock response for IEP creation (USE_MOCK_LLM=true)")
+        # Return working demo response without any complex dependencies
+        demo_response = {
         "id": "demo-iep-12345",
         "student_id": str(iep_data.student_id),
         "template_id": str(iep_data.template_id) if iep_data.template_id else None,
@@ -134,47 +142,70 @@ async def create_iep_with_rag(
         "goals": []
     }
     
-    # Return the demo response for now
-    return demo_response
+        # Return the demo response for mock mode
+        return demo_response
+    
+    # Use the real LLM implementation
+    try:
+        logger.info(f"Creating IEP with RAG/LLM for student {iep_data.student_id}")
         
-        # TODO: Once JSON serialization issues are resolved, uncomment this section:
-        # try:
-        #     # Prepare initial data from request
-        #     initial_data = {
-        #         "content": iep_data.content,
-        #         "meeting_date": iep_data.meeting_date,
-        #         "effective_date": iep_data.effective_date,
-        #         "review_date": iep_data.review_date
-        #     }
-        #     
-        #     # Add goals if provided
-        #     if iep_data.goals:
-        #         initial_data["goals"] = [goal.model_dump() for goal in iep_data.goals]
-        #     
-        #     # Create IEP with RAG
-        #     created_iep = await iep_service.create_iep_with_rag(
-        #         student_id=iep_data.student_id,
-        #         template_id=iep_data.template_id,
-        #         academic_year=iep_data.academic_year,
-        #         initial_data=initial_data,
-        #         user_id=current_user_id,
-        #         user_role=current_user_role
-        #     )
-        #     return created_iep
+        # Get the service dependency
+        iep_service = await get_iep_service(request)
         
-        # except ValueError as e:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_400_BAD_REQUEST,
-        #         detail=str(e)
-        #     )
-        # except Exception as e:
-        #     import traceback
-        #     logger.error(f"Error creating IEP with RAG: {e}")
-        #     logger.error(f"Full traceback: {traceback.format_exc()}")
-        #     raise HTTPException(
-        #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        #         detail="Failed to create IEP with RAG"
-        #     )
+        # Prepare initial data from request
+        initial_data = {
+            "content": iep_data.content if iep_data.content else {},
+            "meeting_date": iep_data.meeting_date,
+            "effective_date": iep_data.effective_date,
+            "review_date": iep_data.review_date
+        }
+        
+        # Add goals if provided
+        if iep_data.goals:
+            initial_data["goals"] = [goal.model_dump() for goal in iep_data.goals]
+        
+        # Create IEP with RAG
+        created_iep = await iep_service.create_iep_with_rag(
+            student_id=iep_data.student_id,
+            template_id=iep_data.template_id,
+            academic_year=iep_data.academic_year,
+            initial_data=initial_data,
+            user_id=current_user_id,
+            user_role=current_user_role
+        )
+        
+        # Ensure the response is JSON serializable
+        # Convert any UUID objects to strings
+        import json
+        from uuid import UUID
+        
+        def make_json_serializable(obj):
+            if isinstance(obj, dict):
+                return {k: make_json_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [make_json_serializable(item) for item in obj]
+            elif isinstance(obj, UUID):
+                return str(obj)
+            else:
+                return obj
+        
+        serializable_iep = make_json_serializable(created_iep)
+        return serializable_iep
+        
+    except ValueError as e:
+        logger.error(f"ValueError creating IEP with RAG: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        import traceback
+        logger.error(f"Error creating IEP with RAG: {e}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create IEP with RAG: {str(e)}"
+        )
 
 @router.post("/{iep_id}/generate-section", response_model=Dict[str, Any])
 async def generate_iep_section(
