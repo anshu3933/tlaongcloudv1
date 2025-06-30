@@ -6,6 +6,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import uuid
 from enum import Enum
+from .type_decorators import SafeDate
 
 Base = declarative_base()
 
@@ -32,7 +33,7 @@ class Student(Base):
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     middle_name = Column(String(100), nullable=True)
-    date_of_birth = Column(Date, nullable=False)
+    date_of_birth = Column(SafeDate(), nullable=False)
     grade_level = Column(String(20), nullable=False)
     disability_codes = Column(JSON, nullable=False, default=list)  # List of disability type codes
     
@@ -44,7 +45,7 @@ class Student(Base):
     # Educational data
     school_district = Column(String(200), nullable=True)
     school_name = Column(String(200), nullable=True)
-    enrollment_date = Column(Date, nullable=True)
+    enrollment_date = Column(SafeDate(), nullable=True)
     
     # Current IEP reference
     active_iep_id = Column(UUID(as_uuid=True), ForeignKey("ieps.id"), nullable=True)
@@ -109,9 +110,9 @@ class IEP(Base):
     
     # IEP Content
     content = Column(JSON, nullable=False, default=dict)
-    meeting_date = Column(Date, nullable=True)
-    effective_date = Column(Date, nullable=True)
-    review_date = Column(Date, nullable=True)
+    meeting_date = Column(SafeDate(), nullable=True)
+    effective_date = Column(SafeDate(), nullable=True)
+    review_date = Column(SafeDate(), nullable=True)
     
     # Versioning
     version = Column(Integer, default=1)
@@ -155,8 +156,8 @@ class IEPGoal(Base):
     measurement_frequency = Column(String, nullable=True)  # Weekly, Monthly, etc.
     
     # Timeline
-    target_date = Column(Date, nullable=True)
-    start_date = Column(Date, nullable=True)
+    target_date = Column(SafeDate(), nullable=True)
+    start_date = Column(SafeDate(), nullable=True)
     
     # Progress tracking
     progress_status = Column(String(50), default=GoalStatus.NOT_STARTED.value)
@@ -194,7 +195,7 @@ class PresentLevel(Base):
     template_id = Column(UUID(as_uuid=True), ForeignKey("pl_assessment_templates.id"))
     
     # Assessment details
-    assessment_date = Column(Date, nullable=False)
+    assessment_date = Column(SafeDate(), nullable=False)
     assessment_type = Column(String(50), nullable=False)
     assessor_auth_id = Column(Integer, nullable=False)
     

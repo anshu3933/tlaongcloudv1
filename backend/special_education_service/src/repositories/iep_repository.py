@@ -98,7 +98,14 @@ class IEPRepository:
         return self._iep_to_dict(iep, include_goals=False)
     
     async def create_iep(self, iep_data: dict) -> dict:
-        """Create new IEP with validation"""
+        """Create new IEP with validation
+        
+        Note: Date conversion is handled by SafeDate TypeDecorator in the model layer,
+        so we can pass date values directly without manual conversion.
+        
+        Pattern: Add → Flush → Refresh with relationships → Commit → Convert to dict
+        This ensures all DB I/O completes within the async context before serialization.
+        """
         # Create IEP instance
         iep = IEP(
             student_id=iep_data["student_id"],
@@ -133,19 +140,19 @@ class IEPRepository:
                     progress_status=goal_data.get("progress_status", GoalStatus.NOT_STARTED.value)
                 )
                 self.session.add(goal)
+            
+            await self.session.flush()  # Flush goals to database
         
-        await self.session.flush()  # Flush to get the ID without committing yet
+        # CRITICAL: Refresh with relationships BEFORE commit while greenlet is active
+        await self.session.refresh(iep, ['goals'])
         
-        # Refresh the IEP object to get all data
-        await self.session.refresh(iep)
-        
-        # Get the result as dict before committing (within same transaction)
+        # Build immutable representation NOW (before commit)
+        # This prevents greenlet errors from post-commit attribute access
         result = self._iep_to_dict(iep, include_goals=True)
         
-        # Commit the transaction first
+        # Commit the transaction - attributes will be expired but we already have our dict
         await self.session.commit()
         
-        # IMPORTANT: Return result AFTER commit to avoid any serialization issues during transaction
         return result
     
     async def get_iep(self, iep_id: UUID, include_goals: bool = True) -> Optional[dict]:
@@ -164,7 +171,10 @@ class IEPRepository:
         return self._iep_to_dict(iep)
     
     async def update_iep(self, iep_id: UUID, updates: dict) -> Optional[dict]:
-        """Update IEP with validation"""
+        """Update IEP with validation
+        
+        Follows pattern: Update → Refresh with relationships → Commit → Convert to dict
+        """
         # Get existing IEP
         iep = await self.session.get(IEP, iep_id)
         if not iep:
@@ -175,10 +185,16 @@ class IEPRepository:
             if hasattr(iep, field) and field not in ["id", "created_at"]:
                 setattr(iep, field, value)
         
-        await self.session.commit()
-        await self.session.refresh(iep)
+        # Refresh with relationships before commit
+        await self.session.refresh(iep, ['goals'])
         
-        return self._iep_to_dict(iep)
+        # Build dict before commit
+        result = self._iep_to_dict(iep, include_goals=True)
+        
+        # Commit all changes
+        await self.session.commit()
+        
+        return result
     
     async def delete_iep(self, iep_id: UUID) -> bool:
         """Soft delete IEP (mark as inactive)"""
@@ -248,7 +264,10 @@ class IEPRepository:
         updates: dict,
         created_by_auth_id: int
     ) -> dict:
-        """Create new version of existing IEP"""
+        """Create new version of existing IEP
+        
+        Uses create_iep which already handles the proper async pattern
+        """
         # Get original IEP
         original = await self.session.get(IEP, original_iep_id)
         if not original:
@@ -269,6 +288,7 @@ class IEPRepository:
         # Merge any additional updates
         new_version_data.update({k: v for k, v in updates.items() if k != "content"})
         
+        # Use create_iep which handles the pattern correctly
         return await self.create_iep(new_version_data)
     
     async def get_template(self, template_id: UUID) -> Optional[dict]:
@@ -296,7 +316,10 @@ class IEPRepository:
         }
     
     async def create_iep_goal(self, goal_data: dict) -> dict:
-        """Create individual IEP goal"""
+        """Create individual IEP goal
+        
+        Follows pattern: Add → Flush → Commit → Convert to dict
+        """
         goal = IEPGoal(
             iep_id=goal_data["iep_id"],
             domain=goal_data["domain"],
@@ -311,9 +334,12 @@ class IEPRepository:
         )
         
         self.session.add(goal)
-        await self.session.commit()
-        await self.session.refresh(goal)
+        await self.session.flush()
         
+        # Commit the transaction
+        await self.session.commit()
+        
+        # Convert to dict after commit
         return self._goal_to_dict(goal)
     
     async def get_iep_goals(self, iep_id: UUID) -> List[dict]:

@@ -37,7 +37,7 @@ engine = create_async_engine(settings.database_url, **engine_kwargs)
 async_session_factory = async_sessionmaker(
     engine,
     class_=AsyncSession,
-    expire_on_commit=True  # Safer default - prevents lazy loading issues
+    expire_on_commit=False  # Prevent expiry after commit to avoid greenlet errors
 )
 
 @asynccontextmanager

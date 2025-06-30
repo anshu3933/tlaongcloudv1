@@ -127,8 +127,48 @@ class IEPService:
             for pl in previous_pls
         ]
         
-        # For now, skip complex RAG and use the default template structure
-        logger.info("Using default template structure for IEP generation")
+        # ACTUAL RAG GENERATION: Call the IEP generator with real AI
+        logger.info("Starting RAG-powered IEP generation using Gemini")
+        
+        # Prepare student data for RAG generation
+        student_data = {
+            "student_id": str(student_id),
+            "disability_type": initial_data.get("disability_type"),
+            "grade_level": initial_data.get("grade_level"),
+            "student_name": initial_data.get("student_name"),
+            "strengths": initial_data.get("strengths", []),
+            "needs": initial_data.get("needs", []),
+            "assessment_summary": initial_data.get("assessment_summary", "")
+        }
+        
+        # Generate IEP content using RAG and Gemini
+        try:
+            iep_content = await self.iep_generator.generate_iep(
+                template=template_data,
+                student_data=student_data,
+                previous_ieps=previous_ieps_data,
+                previous_assessments=previous_pls_data
+            )
+            logger.info("RAG generation completed successfully with Gemini AI")
+            
+            # Add metadata about generation method
+            iep_content.update({
+                "template_used": template_data.get("name", "Default IEP Template"),
+                "generation_method": "rag_powered_ai",
+                "ai_model": "gemini-2.5-flash",
+                "generated_at": str(initial_data.get("meeting_date", ""))
+            })
+            
+        except Exception as e:
+            logger.error(f"RAG generation failed: {e}")
+            # Fallback to basic template structure if RAG fails
+            iep_content = {
+                "error": f"AI generation failed: {str(e)}",
+                "fallback_content": template_data.get("sections", {}),
+                "template_used": template_data.get("name", "Default IEP Template"),
+                "generation_method": "fallback_template",
+                "requires_manual_review": True
+            }
         
         # JSON serialization helper function
         def ensure_json_serializable(obj):
@@ -144,48 +184,8 @@ class IEPService:
             else:
                 return obj
         
-        # Create comprehensive IEP content based on the user's template structure
-        iep_content = ensure_json_serializable({
-            "student_info": {
-                "name": initial_data.get("student_name", template_data.get("sections", {}).get("student_info", "Student Name")),
-                "dob": "To be provided",
-                "class": initial_data.get("grade_level", "Grade Level"),
-                "date_of_iep": str(initial_data.get("meeting_date", "Date to be set"))
-            },
-            "long_term_goal": template_data.get("sections", {}).get("long_term_goal", "Student will demonstrate improved academic and functional performance"),
-            "short_term_goals": template_data.get("sections", {}).get("short_term_goals", "Student will achieve measurable progress in identified areas by June – December 2025"),
-            "oral_language": {
-                "receptive": "Student will improve listening comprehension skills",
-                "expressive": "Student will improve verbal expression abilities",
-                "recommendations": template_data.get("sections", {}).get("oral_language", "Oral Language – Receptive and Expressive Goals and Recommendations")
-            },
-            "reading": {
-                "familiar": template_data.get("sections", {}).get("reading_familiar", "Student will improve reading of familiar materials"),
-                "unfamiliar": template_data.get("sections", {}).get("reading_unfamiliar", "Student will develop skills for reading unfamiliar texts"),
-                "comprehension": template_data.get("sections", {}).get("reading_comprehension", "Student will improve reading comprehension skills")
-            },
-            "spelling": {
-                "goals": template_data.get("sections", {}).get("spelling", "Student will improve spelling accuracy")
-            },
-            "writing": {
-                "recommendations": template_data.get("sections", {}).get("writing", "Student will develop writing skills with appropriate support")
-            },
-            "concept": {
-                "recommendations": template_data.get("sections", {}).get("concept", "Student will develop conceptual understanding")
-            },
-            "math": {
-                "goals": template_data.get("sections", {}).get("math", "Student will improve mathematical skills and problem-solving abilities"),
-                "recommendations": "Provide concrete examples and manipulatives for mathematical concepts"
-            },
-            "services": {
-                "special_education": "Resource room support as needed",
-                "accommodations": ["Extended time", "Small group instruction", "Visual supports"],
-                "frequency": "Support provided as outlined in IEP goals"
-            },
-            "template_used": template_data.get("name", "Default IEP Template"),
-            "generation_method": "template_based",
-            "created_with_optional_template": template_id is None
-        })
+        # Ensure the generated content is JSON serializable
+        iep_content = ensure_json_serializable(iep_content)
         
         logger.info("RAG generation completed, proceeding with database operations")
         
