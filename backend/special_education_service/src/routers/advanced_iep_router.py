@@ -82,6 +82,11 @@ async def create_iep_with_rag(
 ):
     """Create IEP using RAG-powered generation"""
     
+    import time
+    start_time = time.time()
+    logger.info(f"🎯 [BACKEND-ROUTER] RAG IEP creation started: student_id={iep_data.student_id}, user_id={current_user_id}, academic_year={iep_data.academic_year}")
+    logger.info(f"📊 [BACKEND-ROUTER] Request details: template_id={iep_data.template_id}, async={async_processing}, content_keys={list(iep_data.content.keys()) if iep_data.content else []}")
+    
     # Check if async processing is requested
     if async_processing:
         logger.info(f"Using async processing for IEP generation for student {iep_data.student_id}")
@@ -127,10 +132,12 @@ async def create_iep_with_rag(
     
     # Use synchronous real LLM implementation
     try:
-        logger.info(f"Creating IEP with RAG/LLM for student {iep_data.student_id}")
+        logger.info(f"🤖 [BACKEND-ROUTER] Creating IEP with RAG/LLM for student {iep_data.student_id}")
         
         # Get the service dependency
+        logger.info(f"🔧 [BACKEND-ROUTER] Initializing IEP service...")
         iep_service = await get_iep_service(request)
+        logger.info(f"✅ [BACKEND-ROUTER] IEP service initialized successfully")
         
         # Prepare initial data from request
         initial_data = {
@@ -145,6 +152,7 @@ async def create_iep_with_rag(
             initial_data["goals"] = [goal.model_dump() for goal in iep_data.goals]
         
         # Create IEP with RAG
+        logger.info(f"📞 [BACKEND-ROUTER] Calling IEP service create_iep_with_rag...")
         created_iep = await iep_service.create_iep_with_rag(
             student_id=iep_data.student_id,
             template_id=iep_data.template_id,
@@ -153,6 +161,9 @@ async def create_iep_with_rag(
             user_id=current_user_id,
             user_role=current_user_role
         )
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"✅ [BACKEND-ROUTER] IEP created successfully in {elapsed_time:.2f}s: {created_iep.get('id')}")
         
         # Ensure the response is JSON serializable
         # Convert any UUID objects to strings
@@ -170,18 +181,25 @@ async def create_iep_with_rag(
                 return obj
         
         serializable_iep = make_json_serializable(created_iep)
+        
+        final_elapsed = time.time() - start_time
+        logger.info(f"🎉 [BACKEND-ROUTER] RAG IEP creation completed successfully in {final_elapsed:.2f}s")
+        logger.info(f"📄 [BACKEND-ROUTER] Response summary: id={serializable_iep.get('id')}, content_sections={len(serializable_iep.get('content', {}))}, response_size={len(str(serializable_iep))} chars")
+        
         return serializable_iep
         
     except ValueError as e:
-        logger.error(f"ValueError creating IEP with RAG: {e}")
+        elapsed_time = time.time() - start_time
+        logger.error(f"❌ [BACKEND-ROUTER] ValueError creating IEP with RAG after {elapsed_time:.2f}s: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
         import traceback
-        logger.error(f"Error creating IEP with RAG: {e}")
-        logger.error(f"Full traceback: {traceback.format_exc()}")
+        elapsed_time = time.time() - start_time
+        logger.error(f"💥 [BACKEND-ROUTER] Critical error creating IEP with RAG after {elapsed_time:.2f}s: {e}")
+        logger.error(f"🔍 [BACKEND-ROUTER] Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create IEP with RAG: {str(e)}"

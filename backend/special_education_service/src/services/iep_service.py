@@ -37,19 +37,27 @@ class IEPService:
         """Create new IEP using template and RAG generation"""
         
         import logging
+        import time
         logger = logging.getLogger(__name__)
-        logger.error(f"[DEBUG] Creating IEP with RAG for student {student_id}, academic year {academic_year}")
-        logger.info(f"Creating IEP with RAG for student {student_id}, academic year {academic_year}")
+        start_time = time.time()
+        
+        logger.info(f"🚀 [BACKEND-SERVICE] Starting RAG IEP creation for student {student_id}, academic year {academic_year}")
+        logger.info(f"📋 [BACKEND-SERVICE] Input validation: template_id={template_id}, user_id={user_id}, user_role={user_role}")
+        logger.info(f"📊 [BACKEND-SERVICE] Initial data keys: {list(initial_data.keys())}, content_keys: {list(initial_data.get('content', {}).keys())}")
         
         # STEP 1: Collect all needed data from database FIRST (before any external calls)
+        logger.info(f"🗃️ [BACKEND-SERVICE] STEP 1: Collecting database data...")
         template = None
         if template_id:
             try:
+                logger.info(f"📋 [BACKEND-SERVICE] Fetching template: {template_id}")
                 template = await self.repository.get_template(template_id)
                 if not template:
-                    logger.warning(f"Template {template_id} not found, using default template")
+                    logger.warning(f"⚠️ [BACKEND-SERVICE] Template {template_id} not found, using default template")
+                else:
+                    logger.info(f"✅ [BACKEND-SERVICE] Template fetched successfully: {template.get('name', 'Unknown')}")
             except Exception as e:
-                logger.warning(f"Error fetching template {template_id}, using default template: {e}")
+                logger.warning(f"❌ [BACKEND-SERVICE] Error fetching template {template_id}, using default template: {e}")
         
         # Create default template if none provided or not found
         if not template:
@@ -86,6 +94,7 @@ class IEPService:
                 ]
             }
         
+        logger.info(f"📚 [BACKEND-SERVICE] Fetching student history...")
         previous_ieps = await self.repository.get_student_ieps(
             student_id, 
             limit=3
@@ -95,9 +104,12 @@ class IEPService:
             limit=3
         )
         
+        logger.info(f"📊 [BACKEND-SERVICE] Historical data collected: {len(previous_ieps)} previous IEPs, {len(previous_pls)} assessments")
+        
         # STEP 2: Disconnect from database session and generate content with RAG
         # This ensures no active DB session during external API calls
-        logger.info("Starting RAG generation (external API calls)")
+        step1_time = time.time()
+        logger.info(f"🤖 [BACKEND-SERVICE] STEP 2: Starting RAG generation (external API calls) after {step1_time - start_time:.2f}s")
         
         # Prepare data for RAG (convert to serializable format)
         template_data = {
@@ -130,26 +142,50 @@ class IEPService:
         # ACTUAL RAG GENERATION: Call the IEP generator with real AI
         logger.info("Starting RAG-powered IEP generation using Gemini")
         
-        # Prepare student data for RAG generation
+        # Extract student data from the content field (where frontend sends it)
+        content_data = initial_data.get("content", {})
+        assessment_data = content_data.get("assessment_summary", {})
+        
+        # Prepare student data for RAG generation using content field
         student_data = {
             "student_id": str(student_id),
-            "disability_type": initial_data.get("disability_type"),
-            "grade_level": initial_data.get("grade_level"),
-            "student_name": initial_data.get("student_name"),
-            "strengths": initial_data.get("strengths", []),
-            "needs": initial_data.get("needs", []),
-            "assessment_summary": initial_data.get("assessment_summary", "")
+            "disability_type": content_data.get("disability_types", []),
+            "grade_level": content_data.get("grade_level", ""),
+            "student_name": content_data.get("student_name", ""),
+            "case_manager_name": content_data.get("case_manager_name", ""),
+            "placement_setting": content_data.get("placement_setting", ""),
+            "service_hours_per_week": content_data.get("service_hours_per_week", 0),
+            # Extract assessment summary details
+            "current_achievement": assessment_data.get("current_achievement", ""),
+            "strengths": assessment_data.get("strengths", ""),
+            "areas_for_growth": assessment_data.get("areas_for_growth", ""),
+            "learning_profile": assessment_data.get("learning_profile", ""),
+            "interests": assessment_data.get("interests", ""),
+            # Extract educational planning if available
+            "annual_goals": content_data.get("educational_planning", {}).get("annual_goals", ""),
+            "teaching_strategies": content_data.get("educational_planning", {}).get("teaching_strategies", ""),
+            "assessment_methods": content_data.get("educational_planning", {}).get("assessment_methods", ""),
+            # Fallback to root level if content is empty (for backwards compatibility)
+            "needs": initial_data.get("needs", []) if not content_data else [],
+            "assessment_summary": initial_data.get("assessment_summary", "") if not content_data else ""
         }
+        
+        logger.info(f"📄 [BACKEND-SERVICE] Extracted student data for RAG: {student_data}")
+        logger.info(f"📋 [BACKEND-SERVICE] Content data received keys: {list(content_data.keys()) if content_data else []}")
         
         # Generate IEP content using RAG and Gemini
         try:
+            rag_start = time.time()
+            logger.info(f"🧠 [BACKEND-SERVICE] Calling RAG generator...")
             iep_content = await self.iep_generator.generate_iep(
                 template=template_data,
                 student_data=student_data,
                 previous_ieps=previous_ieps_data,
                 previous_assessments=previous_pls_data
             )
-            logger.info("RAG generation completed successfully with Gemini AI")
+            rag_end = time.time()
+            logger.info(f"✅ [BACKEND-SERVICE] RAG generation completed successfully in {rag_end - rag_start:.2f}s with Gemini AI")
+            logger.info(f"📄 [BACKEND-SERVICE] Generated content sections: {list(iep_content.keys()) if isinstance(iep_content, dict) else 'non-dict response'}")
             
             # Add metadata about generation method
             iep_content.update({
@@ -160,7 +196,8 @@ class IEPService:
             })
             
         except Exception as e:
-            logger.error(f"RAG generation failed: {e}")
+            rag_end = time.time()
+            logger.error(f"❌ [BACKEND-SERVICE] RAG generation failed after {rag_end - rag_start:.2f}s: {e}")
             # Fallback to basic template structure if RAG fails
             iep_content = {
                 "error": f"AI generation failed: {str(e)}",
@@ -169,6 +206,7 @@ class IEPService:
                 "generation_method": "fallback_template",
                 "requires_manual_review": True
             }
+            logger.info(f"🔄 [BACKEND-SERVICE] Using fallback template content")
         
         # JSON serialization helper function
         def ensure_json_serializable(obj):
@@ -187,7 +225,8 @@ class IEPService:
         # Ensure the generated content is JSON serializable
         iep_content = ensure_json_serializable(iep_content)
         
-        logger.info("RAG generation completed, proceeding with database operations")
+        step2_time = time.time()
+        logger.info(f"🗃️ [BACKEND-SERVICE] STEP 3: RAG generation completed in {step2_time - step1_time:.2f}s, proceeding with database operations")
         
         # 4. Create IEP directly without retry mechanism to avoid greenlet issues
         try:

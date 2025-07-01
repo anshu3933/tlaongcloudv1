@@ -64,6 +64,9 @@ class IEPGenerator:
                     )
                     generated_content[section_name] = section_content
                     logger.info(f"Section {section_name} generated successfully")
+                    
+                    # Add small delay between sections to avoid overwhelming API
+                    await asyncio.sleep(0.5)
                 except Exception as e:
                     logger.error(f"Failed to generate section {section_name}: {e}")
                     # Provide fallback content
@@ -141,28 +144,48 @@ class IEPGenerator:
     ) -> Dict[str, Any]:
         """Generate individual IEP section"""
         prompt = f"""
-        You are an expert special education professional creating an IEP section.
+        You are an expert special education professional creating an IEP section for {context.get('student_name', 'this student')}.
         
         Section: {section_name}
         Template Requirements: {json.dumps(section_template)}
         
-        Student Context:
-        - Disability Type: {context.get('disability_type')}
-        - Grade Level: {context.get('grade_level')}
-        - Current Performance: {context.get('current_performance')}
+        DETAILED STUDENT INFORMATION:
+        - Student Name: {context.get('student_name', 'Student')}
+        - Disability Type: {context.get('disability_type', 'Not specified')}
+        - Grade Level: {context.get('grade_level', 'Not specified')}
+        - Case Manager: {context.get('case_manager_name', 'Not specified')}
+        - Placement Setting: {context.get('placement_setting', 'Not specified')}
+        - Service Hours per Week: {context.get('service_hours_per_week', 'Not specified')}
         
-        Previous Assessments Summary:
-        {context.get('assessment_summary')}
+        CURRENT PERFORMANCE & ASSESSMENT DATA:
+        - Current Achievement: {context.get('current_achievement', 'No data available')}
+        - Student Strengths: {context.get('strengths', 'To be determined')}
+        - Areas for Growth: {context.get('areas_for_growth', 'To be determined')}
+        - Learning Profile: {context.get('learning_profile', 'To be evaluated')}
+        - Student Interests: {context.get('interests', 'To be explored')}
         
-        Similar IEP Examples:
-        {context.get('similar_examples')}
+        EDUCATIONAL PLANNING:
+        - Annual Goals: {context.get('annual_goals', 'To be developed')}
+        - Teaching Strategies: {context.get('teaching_strategies', 'To be determined')}
+        - Assessment Methods: {context.get('assessment_methods', 'To be determined')}
+        
+        PREVIOUS DATA:
+        - Previous Assessments: {context.get('assessment_summary', 'No previous assessments')}
+        - Previous Goals: {context.get('previous_goals', 'No previous goals')}
+        
+        SIMILAR IEP EXAMPLES:
+        {context.get('similar_examples', 'No similar examples found')}
         
         Generate a comprehensive {section_name} section following the template structure.
-        Ensure content is:
-        1. Specific to the student's needs
-        2. Measurable and observable
-        3. Aligned with educational standards
-        4. Based on assessment data
+        Use the SPECIFIC student information provided above, not generic placeholders.
+        
+        Requirements:
+        1. Use the student's actual name and specific details
+        2. Reference the actual disability type and grade level
+        3. Include specific strengths and needs mentioned
+        4. Create measurable and observable content
+        5. Base content on the assessment data provided
+        6. Align with educational standards for the grade level
         
         IMPORTANT: Return ONLY valid JSON. Do not include any markdown formatting, explanations, or additional text.
         Escape all quotes in content with backslashes. Example:
@@ -171,31 +194,105 @@ class IEPGenerator:
         Return as a single JSON object matching the template structure.
         """
         
-        response = await asyncio.to_thread(
-            self.client.models.generate_content,
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-                max_output_tokens=2048,
-                response_mime_type="application/json"
-            )
-        )
-        
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"[DEBUG] Section {section_name} - Gemini response received")
-        logger.error(f"[DEBUG] Response text is None: {response.text is None}")
-        logger.error(f"[DEBUG] Response text length: {len(response.text) if response.text else 0}")
         
-        # Check if response is None or empty
-        if not response.text:
-            logger.error(f"Empty response from Gemini for section {section_name}")
+        try:
+            logger.info(f"Sending request to Gemini for section {section_name}")
+            logger.info(f"Prompt length: {len(prompt)} characters")
+            
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.7,
+                    max_output_tokens=65536,
+                    response_mime_type="application/json"
+                )
+            )
+            
+            logger.info(f"Gemini response received for section {section_name}")
+            logger.info(f"Response object type: {type(response)}")
+            logger.info(f"Response has text attribute: {hasattr(response, 'text')}")
+            
+            if hasattr(response, 'text'):
+                logger.info(f"Response text is None: {response.text is None}")
+                logger.info(f"Response text length: {len(response.text) if response.text else 0}")
+                if response.text:
+                    logger.info(f"First 200 chars: {response.text[:200]}")
+            
+            # Check for blocked content or other issues
+            if hasattr(response, 'prompt_feedback'):
+                logger.info(f"Prompt feedback: {response.prompt_feedback}")
+            
+            if hasattr(response, 'candidates') and response.candidates:
+                logger.info(f"Number of candidates: {len(response.candidates)}")
+                for i, candidate in enumerate(response.candidates):
+                    if hasattr(candidate, 'finish_reason'):
+                        logger.info(f"Candidate {i} finish reason: {candidate.finish_reason}")
+                    if hasattr(candidate, 'safety_ratings'):
+                        logger.info(f"Candidate {i} safety ratings: {candidate.safety_ratings}")
+            
+            # Check if response is None or empty - retry once with simplified prompt
+            if not response.text:
+                logger.warning(f"Empty response from Gemini for section {section_name}, retrying with simplified prompt...")
+                
+                # Simplified retry prompt
+                retry_prompt = f"""
+                Generate content for {section_name} section of an IEP for {context.get('student_name', 'this student')}.
+                
+                Student: {context.get('student_name', 'Student')}
+                Grade: {context.get('grade_level', 'Not specified')}
+                Disability: {context.get('disability_type', 'Not specified')}
+                
+                Create appropriate {section_name} content in JSON format.
+                Return only valid JSON like: {{"content": "Your generated content here"}}
+                """
+                
+                try:
+                    await asyncio.sleep(1)  # Brief delay before retry
+                    retry_response = await asyncio.to_thread(
+                        self.client.models.generate_content,
+                        model=self.model,
+                        contents=retry_prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.5,
+                            max_output_tokens=65536,
+                            response_mime_type="application/json"
+                        )
+                    )
+                    
+                    if retry_response.text:
+                        logger.info(f"Retry successful for section {section_name}")
+                        response = retry_response  # Use retry response
+                    else:
+                        logger.error(f"Retry also failed for section {section_name}")
+                        return {
+                            "content": f"Generated {section_name} content - fallback due to empty response",
+                            "description": f"This section was generated for {section_name}",
+                            "requirements": "Content follows IEP standards",
+                            "status": "fallback_empty_response"
+                        }
+                        
+                except Exception as retry_error:
+                    logger.error(f"Retry failed for section {section_name}: {retry_error}")
+                    return {
+                        "content": f"Generated {section_name} content - fallback due to empty response",
+                        "description": f"This section was generated for {section_name}",
+                        "requirements": "Content follows IEP standards",
+                        "status": "fallback_empty_response"
+                    }
+                
+        except Exception as api_error:
+            logger.error(f"Gemini API error for section {section_name}: {api_error}")
+            logger.error(f"API error type: {type(api_error)}")
             return {
-                "content": f"Generated {section_name} content - fallback due to empty response",
+                "content": f"Generated {section_name} content - fallback due to API error",
                 "description": f"This section was generated for {section_name}",
                 "requirements": "Content follows IEP standards",
-                "status": "fallback_empty_response"
+                "status": "fallback_api_error",
+                "error": str(api_error)
             }
         
         logger.info(f"Gemini response length: {len(response.text)} characters")
@@ -268,10 +365,13 @@ class IEPGenerator:
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.7,
-                max_output_tokens=2048,
+                max_output_tokens=65536,
                 response_mime_type="application/json"
             )
         )
+        
+        import logging
+        logger = logging.getLogger(__name__)
         
         if not response.text:
             logger.error("Empty response from Gemini for goals generation")
@@ -448,9 +548,33 @@ class IEPGenerator:
         similar_ieps: List[Dict]
     ) -> Dict:
         """Prepare context for generation"""
+        # Extract disability types (handle both list and string formats)
+        disability_types = student_data.get("disability_type", [])
+        if isinstance(disability_types, list) and disability_types:
+            disability_type_str = ", ".join(disability_types)
+        elif isinstance(disability_types, str):
+            disability_type_str = disability_types
+        else:
+            disability_type_str = "Not specified"
+        
         return {
-            "disability_type": student_data.get("disability_type"),
-            "grade_level": student_data.get("grade_level"),
+            "disability_type": disability_type_str,
+            "grade_level": student_data.get("grade_level", "Not specified"),
+            "student_name": student_data.get("student_name", "Student"),
+            "case_manager_name": student_data.get("case_manager_name", ""),
+            "placement_setting": student_data.get("placement_setting", ""),
+            "service_hours_per_week": student_data.get("service_hours_per_week", 0),
+            # Assessment and performance data
+            "current_achievement": student_data.get("current_achievement", ""),
+            "strengths": student_data.get("strengths", ""),
+            "areas_for_growth": student_data.get("areas_for_growth", ""),
+            "learning_profile": student_data.get("learning_profile", ""),
+            "interests": student_data.get("interests", ""),
+            # Educational planning
+            "annual_goals": student_data.get("annual_goals", ""),
+            "teaching_strategies": student_data.get("teaching_strategies", ""),
+            "assessment_methods": student_data.get("assessment_methods", ""),
+            # Legacy fields
             "current_performance": self._summarize_current_performance(previous_assessments),
             "assessment_summary": self._summarize_assessments(previous_assessments),
             "similar_examples": self._format_similar_examples(similar_ieps),
@@ -463,7 +587,12 @@ class IEPGenerator:
             return "No previous assessments available"
         
         latest = assessments[0]  # Assuming sorted by date
-        return latest.get("content", {}).get("summary", "Performance data available")
+        content = latest.get("content", {})
+        # Defensive check: content might be a string instead of dict
+        if isinstance(content, dict):
+            return content.get("summary", "Performance data available")
+        else:
+            return str(content) if content else "Performance data available"
     
     def _summarize_assessments(self, assessments: List[Dict]) -> str:
         """Create summary of assessment history"""
@@ -488,6 +617,10 @@ class IEPGenerator:
         """Extract goals from previous IEPs"""
         all_goals = []
         for iep in previous_ieps:
-            goals = iep.get("content", {}).get("goals", [])
-            all_goals.extend(goals)
+            content = iep.get("content", {})
+            # Defensive check: content might be a string instead of dict
+            if isinstance(content, dict):
+                goals = content.get("goals", [])
+                all_goals.extend(goals)
+            # If content is a string, we can't extract goals from it
         return all_goals
