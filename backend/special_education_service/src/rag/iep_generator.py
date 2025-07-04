@@ -144,12 +144,12 @@ class IEPGenerator:
     ) -> Dict[str, Any]:
         """Generate individual IEP section"""
         prompt = f"""
-        You are an expert special education professional creating an IEP section for {context.get('student_name', 'this student')}.
+        You are an expert special education professional creating an IEP section for the provided student.
         
         Section: {section_name}
         Template Requirements: {json.dumps(section_template)}
         
-        DETAILED STUDENT INFORMATION:
+        STUDENT PROFILE (USE EXACTLY AS PROVIDED):
         - Student Name: {context.get('student_name', 'Student')}
         - Disability Type: {context.get('disability_type', 'Not specified')}
         - Grade Level: {context.get('grade_level', 'Not specified')}
@@ -157,35 +157,35 @@ class IEPGenerator:
         - Placement Setting: {context.get('placement_setting', 'Not specified')}
         - Service Hours per Week: {context.get('service_hours_per_week', 'Not specified')}
         
-        CURRENT PERFORMANCE & ASSESSMENT DATA:
+        ASSESSMENT DATA TO TRANSFORM:
         - Current Achievement: {context.get('current_achievement', 'No data available')}
         - Student Strengths: {context.get('strengths', 'To be determined')}
         - Areas for Growth: {context.get('areas_for_growth', 'To be determined')}
         - Learning Profile: {context.get('learning_profile', 'To be evaluated')}
         - Student Interests: {context.get('interests', 'To be explored')}
         
-        EDUCATIONAL PLANNING:
+        EDUCATIONAL PLANNING CONTEXT:
         - Annual Goals: {context.get('annual_goals', 'To be developed')}
         - Teaching Strategies: {context.get('teaching_strategies', 'To be determined')}
         - Assessment Methods: {context.get('assessment_methods', 'To be determined')}
         
-        PREVIOUS DATA:
+        HISTORICAL CONTEXT:
         - Previous Assessments: {context.get('assessment_summary', 'No previous assessments')}
         - Previous Goals: {context.get('previous_goals', 'No previous goals')}
         
-        SIMILAR IEP EXAMPLES:
+        SIMILAR IEP EXAMPLES FOR EDUCATIONAL GUIDANCE:
         {context.get('similar_examples', 'No similar examples found')}
         
-        Generate a comprehensive {section_name} section following the template structure.
-        Use the SPECIFIC student information provided above, not generic placeholders.
+        CRITICAL CONSTRAINTS:
+        1. DO NOT modify, expand, or generate personal details about the student
+        2. USE provided student information exactly as given
+        3. FOCUS on transforming assessment data into educational language
+        4. CONNECT assessment findings to instructional strategies and accommodations
+        5. CREATE measurable educational objectives based on assessment data
+        6. REFERENCE grade-level academic standards and educational frameworks
+        7. PROVIDE professional educational analysis, not personal storytelling
         
-        Requirements:
-        1. Use the student's actual name and specific details
-        2. Reference the actual disability type and grade level
-        3. Include specific strengths and needs mentioned
-        4. Create measurable and observable content
-        5. Base content on the assessment data provided
-        6. Align with educational standards for the grade level
+        Transform the assessment data into a professional {section_name} section that links educational needs to appropriate interventions and objectives.
         
         IMPORTANT: Return ONLY valid JSON. Do not include any markdown formatting, explanations, or additional text.
         Escape all quotes in content with backslashes. Example:
@@ -309,16 +309,9 @@ class IEPGenerator:
             logger.error(f"JSON parsing failed for section {section_name}: {e}")
             logger.error(f"Raw response: {response.text[:500]}...")
             
-            # FALLBACK: Extract content and return structured dict (best practice)
+            # FALLBACK: Return simple string content to avoid frontend parsing issues
             content_text = self._extract_text_content(response.text)
-            return {
-                "content": content_text or f"AI-generated content for {section_name} section",
-                "description": f"This {section_name} section was generated using AI",
-                "requirements": "Content follows IEP standards and regulatory requirements",
-                "status": "generated_with_fallback",
-                "ai_powered": True,
-                "raw_response_length": len(response.text) if response.text else 0
-            }
+            return content_text or f"Professional {section_name} content generated based on assessment data and educational standards."
     
     async def _generate_goals(
         self,
@@ -328,29 +321,35 @@ class IEPGenerator:
     ) -> List[Dict]:
         """Generate SMART goals based on assessments"""
         prompt = f"""
-        Generate SMART IEP goals based on the following assessment data:
+        Generate SMART IEP goals based on assessment data. Transform assessment findings into educational objectives.
         
-        Student Profile:
+        PROVIDED STUDENT PROFILE (USE AS-IS):
         - Disability: {student_data.get('disability_type')}
         - Grade: {student_data.get('grade_level')}
-        - Strengths: {student_data.get('strengths', [])}
-        - Needs: {student_data.get('needs', [])}
         
-        Recent Assessments:
+        ASSESSMENT DATA TO TRANSFORM INTO GOALS:
+        - Current Achievement: {student_data.get('current_achievement', 'Not provided')}
+        - Strengths: {student_data.get('strengths', 'Not provided')}
+        - Areas for Growth: {student_data.get('areas_for_growth', 'Not provided')}
+        - Learning Profile: {student_data.get('learning_profile', 'Not provided')}
+        
+        HISTORICAL ASSESSMENT CONTEXT:
         {json.dumps(assessments, indent=2)}
         
-        Create 3-5 goals that are:
-        - Specific and measurable
-        - Achievable within the academic year
-        - Relevant to the student's needs
-        - Time-bound with clear criteria
+        EDUCATIONAL TRANSFORMATION REQUIREMENTS:
+        1. DO NOT generate personal details about the student
+        2. TRANSFORM assessment data into measurable educational objectives
+        3. CREATE 3-5 goals that directly address identified areas for growth
+        4. CONNECT strengths to instructional approaches within goals
+        5. REFERENCE grade-level academic standards and benchmarks
+        6. BASE goals on educational evidence and assessment data provided
         
-        For each goal include:
+        Each goal must include:
         - domain (academic, behavioral, social, communication)
-        - goal_text
-        - baseline (current performance)
-        - target_criteria (measurable outcome)
-        - measurement_method
+        - goal_text (measurable educational objective)
+        - baseline (current performance level from assessment data)
+        - target_criteria (specific, measurable outcome with criteria)
+        - measurement_method (educational assessment approach)
         
         IMPORTANT: Return ONLY valid JSON. Do not include any markdown formatting, explanations, or additional text.
         Escape all quotes in content with backslashes. Example:

@@ -14,7 +14,7 @@ class StrictGeminiModel(BaseModel):
         str_strip_whitespace=True,
         validate_assignment=True,
         use_enum_values=True,
-        str_max_length=10000  # Prevent massive strings
+        str_max_length=50000  # INCREASED from 10000 to allow comprehensive IEP content
     )
 
 
@@ -26,47 +26,47 @@ class StudentInfoSchema(StrictGeminiModel):
 
 
 class OralLanguageSchema(StrictGeminiModel):
-    receptive: str = Field(..., min_length=10, max_length=500)
-    expressive: str = Field(..., min_length=10, max_length=500)
-    recommendations: str = Field(..., min_length=10, max_length=1000)
+    receptive: str = Field(..., min_length=10, max_length=5000)  # INCREASED for comprehensive content
+    expressive: str = Field(..., min_length=10, max_length=5000)  # INCREASED for comprehensive content
+    recommendations: str = Field(..., min_length=10, max_length=8000)  # INCREASED for comprehensive content
 
 
 class ReadingSchema(StrictGeminiModel):
-    familiar: str = Field(..., min_length=10, max_length=500)
-    unfamiliar: str = Field(..., min_length=10, max_length=500)
-    comprehension: str = Field(..., min_length=10, max_length=500)
+    familiar: str = Field(..., min_length=10, max_length=5000)  # INCREASED for comprehensive content
+    unfamiliar: str = Field(..., min_length=10, max_length=5000)  # INCREASED for comprehensive content
+    comprehension: str = Field(..., min_length=10, max_length=5000)  # INCREASED for comprehensive content
 
 
 class SpellingSchema(StrictGeminiModel):
-    goals: str = Field(..., min_length=10, max_length=500)
+    goals: str = Field(..., min_length=10, max_length=5000)  # INCREASED for comprehensive content
 
 
 class WritingSchema(StrictGeminiModel):
-    recommendations: str = Field(..., min_length=10, max_length=1000)
+    recommendations: str = Field(..., min_length=10, max_length=8000)  # INCREASED for comprehensive content
 
 
 class ConceptSchema(StrictGeminiModel):
-    recommendations: str = Field(..., min_length=10, max_length=1000)
+    recommendations: str = Field(..., min_length=10, max_length=8000)  # INCREASED for comprehensive content
 
 
 class MathSchema(StrictGeminiModel):
-    goals: str = Field(..., min_length=10, max_length=500)
-    recommendations: str = Field(..., min_length=10, max_length=1000)
+    goals: str = Field(..., min_length=10, max_length=5000)  # INCREASED for comprehensive content
+    recommendations: str = Field(..., min_length=10, max_length=8000)  # INCREASED for comprehensive content
 
 
 class ServiceSchema(StrictGeminiModel):
-    special_education: str = Field(..., min_length=10, max_length=500)
-    related_services: List[str] = Field(default_factory=list, max_length=10)
-    accommodations: List[str] = Field(..., min_length=1, max_length=20)
-    frequency: str = Field(..., min_length=10, max_length=200)
+    special_education: str = Field(..., min_length=10, max_length=5000)  # INCREASED for comprehensive content
+    related_services: List[str] = Field(default_factory=list, max_length=20)  # INCREASED for more services
+    accommodations: List[str] = Field(..., min_length=1, max_length=50)  # INCREASED for more accommodations
+    frequency: str = Field(..., min_length=10, max_length=2000)  # INCREASED for detailed frequency descriptions
     
     @field_validator('accommodations', 'related_services')
     @classmethod
     def validate_service_items(cls, v: List[str]) -> List[str]:
         """Validate each service item"""
         for item in v:
-            if not isinstance(item, str) or len(item) < 5 or len(item) > 200:
-                raise ValueError(f'Service item must be 5-200 characters: {item[:50]}...')
+            if not isinstance(item, str) or len(item) < 5 or len(item) > 2000:  # INCREASED from 200 to 2000
+                raise ValueError(f'Service item must be 5-2000 characters: {item[:50]}...')
         return v
 
 
@@ -80,8 +80,8 @@ class GeminiIEPResponse(StrictGeminiModel):
     """Complete IEP response schema with strict validation"""
     
     student_info: StudentInfoSchema
-    long_term_goal: str = Field(..., min_length=20, max_length=500)
-    short_term_goals: str = Field(..., min_length=20, max_length=1000)
+    long_term_goal: str = Field(..., min_length=20, max_length=8000)  # INCREASED for comprehensive content
+    short_term_goals: str = Field(..., min_length=20, max_length=10000)  # INCREASED for comprehensive content
     
     # Academic sections
     oral_language: OralLanguageSchema

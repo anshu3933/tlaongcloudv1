@@ -40,7 +40,7 @@ class GeminiClient:
                 "temperature": 0.7,
                 "top_p": 0.95,
                 "top_k": 40,
-                "max_output_tokens": 8192,
+                "max_output_tokens": 32768,  # INCREASED from 8192 to 32768 for comprehensive IEP content
                 "response_mime_type": "application/json",
             },
             safety_settings={
@@ -51,9 +51,9 @@ class GeminiClient:
             }
         )
         
-        # Response size limits
-        self.max_response_size = 100000  # 100KB uncompressed
-        self.compress_threshold = 50000  # Compress if > 50KB
+        # Response size limits - INCREASED for comprehensive IEP content
+        self.max_response_size = 500000  # 500KB uncompressed (increased from 100KB)
+        self.compress_threshold = 200000  # Compress if > 200KB (increased from 50KB)
     
     @retry(
         stop=stop_after_attempt(3),
@@ -257,8 +257,20 @@ CRITICAL INSTRUCTIONS:
 4. Ensure all quotes and special characters are properly escaped
 5. Follow the exact structure shown in the example
 
-STUDENT INFORMATION:
-{json.dumps(student_data, indent=2)}
+ASSESSMENT DATA FOR EDUCATIONAL ANALYSIS:
+Current Performance: {student_data.get('current_achievement', 'Not provided')}
+Identified Strengths: {student_data.get('strengths', 'Not provided')}
+Areas Needing Support: {student_data.get('areas_for_growth', 'Not provided')}
+Learning Profile: {student_data.get('learning_profile', 'Not provided')}
+
+STUDENT PROFILE (USE EXACTLY AS PROVIDED - DO NOT CHANGE):
+Name: {student_data.get('student_name', 'Student')}
+Grade: {student_data.get('grade_level', 'Not specified')} (CRITICAL: Use this exact grade level)
+Disability: {student_data.get('disability_type', 'Not specified')}
+Case Manager: {student_data.get('case_manager_name', 'Not specified')}
+
+CRITICAL INSTRUCTION: The student is in grade {student_data.get('grade_level', 'Not specified')}. 
+DO NOT change this grade level. All content must be appropriate for grade {student_data.get('grade_level', 'Not specified')} standards and expectations.
 
 TEMPLATE STRUCTURE:
 {json.dumps(template_data, indent=2)}
@@ -278,6 +290,34 @@ Generate a comprehensive, individualized IEP that:
 - Is appropriate for the student's grade level and disability
 - Uses professional educational language
 - Fills ALL required fields with meaningful content
+
+CRITICAL CONTENT REQUIREMENTS:
+- NEVER use placeholder text like "To be determined", "Not specified", "Student", or generic descriptions
+- USE THE ACTUAL STUDENT NAME, GRADE, AND SPECIFIC DETAILS provided in the student information
+- Generate 2000-5000 characters of detailed content for each major section
+- Include specific examples, strategies, and measurable criteria
+- Create comprehensive, professional IEP content that would be used in real educational settings
+- Each section should be detailed enough to guide actual instruction and support
+
+CRITICAL EDUCATIONAL DOMAIN CONSTRAINTS:
+- DO NOT generate, modify, or confabulate any personal details about the student (name, interests, background)
+- USE PROVIDED student data exactly as given - do not expand or embellish personal information
+- FOCUS EXCLUSIVELY on educational domain transformations: assessment data → educational objectives
+- TRANSFORM assessment data into professional educational language and measurable goals
+- CONNECT provided strengths/needs to evidence-based instructional strategies and accommodations
+- REFERENCE grade-level standards and educational frameworks appropriate to the student's grade
+- ANALYZE educational implications of assessment data without adding personal details
+- SYNTHESIZE assessment information into professional present levels and educational recommendations
+- LINK assessment findings to specific, measurable IEP goals and objectives
+- PROVIDE educational analysis and professional recommendations, not personal storytelling
+
+CONTENT DEPTH EXPECTATIONS:
+- Long-term goals: 1500+ characters with detailed measurable outcomes based on grade-level standards
+- Short-term goals: 2500+ characters with multiple specific objectives that build toward annual goals
+- Oral language: 3000+ characters covering receptive, expressive, and evidence-based recommendations
+- Reading sections: 2000+ characters each analyzing reading skills with grade-level benchmarks
+- Math goals: 2000+ characters connecting math skills to grade-level curriculum standards
+- Services: 2000+ characters detailing evidence-based interventions, frequency, and progress monitoring
 
 Output ONLY the JSON object following the exact schema and format shown in the example."""
         

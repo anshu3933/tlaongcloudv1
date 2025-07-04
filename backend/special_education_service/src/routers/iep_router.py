@@ -150,9 +150,13 @@ async def create_iep(
             template_id=iep_data.template_id
         )
         
+        # Apply flattening to prevent [object Object] errors in frontend
+        from ..utils.response_flattener import SimpleIEPFlattener
+        flattened_iep = SimpleIEPFlattener.flatten_for_frontend(created_iep)
+        
         # Return IEP response without user enrichment to avoid greenlet issues
         # User enrichment can be done by frontend via separate API calls if needed
-        return IEPResponse(**created_iep)
+        return IEPResponse(**flattened_iep)
         
     except ValueError as e:
         raise HTTPException(

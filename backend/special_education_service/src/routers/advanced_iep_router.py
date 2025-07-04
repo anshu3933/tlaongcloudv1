@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict, Any
 from uuid import UUID
+from datetime import datetime
 import logging
 
 from ..database import get_db, get_request_scoped_db
@@ -87,6 +88,28 @@ async def create_iep_with_rag(
     logger.info(f"🎯 [BACKEND-ROUTER] RAG IEP creation started: student_id={iep_data.student_id}, user_id={current_user_id}, academic_year={iep_data.academic_year}")
     logger.info(f"📊 [BACKEND-ROUTER] Request details: template_id={iep_data.template_id}, async={async_processing}, content_keys={list(iep_data.content.keys()) if iep_data.content else []}")
     
+    # DETAILED REQUEST DATA LOGGING FOR ROOT CAUSE ANALYSIS
+    logger.error(f"🔍 [DEBUG] FULL REQUEST DATA RECEIVED:")
+    logger.error(f"🔍 [DEBUG] iep_data.student_id: {iep_data.student_id}")
+    logger.error(f"🔍 [DEBUG] iep_data.academic_year: {iep_data.academic_year}")
+    logger.error(f"🔍 [DEBUG] iep_data.template_id: {iep_data.template_id}")
+    logger.error(f"🔍 [DEBUG] iep_data.meeting_date: {iep_data.meeting_date}")
+    logger.error(f"🔍 [DEBUG] iep_data.effective_date: {iep_data.effective_date}")
+    logger.error(f"🔍 [DEBUG] iep_data.review_date: {iep_data.review_date}")
+    logger.error(f"🔍 [DEBUG] iep_data.content: {iep_data.content}")
+    if iep_data.content:
+        logger.error(f"🔍 [DEBUG] content.student_name: {iep_data.content.get('student_name', 'NOT_SET')}")
+        logger.error(f"🔍 [DEBUG] content.grade_level: {iep_data.content.get('grade_level', 'NOT_SET')}")
+        logger.error(f"🔍 [DEBUG] content.case_manager_name: {iep_data.content.get('case_manager_name', 'NOT_SET')}")
+        logger.error(f"🔍 [DEBUG] content.assessment_summary: {iep_data.content.get('assessment_summary', 'NOT_SET')}")
+        if 'assessment_summary' in iep_data.content and isinstance(iep_data.content['assessment_summary'], dict):
+            assessment = iep_data.content['assessment_summary']
+            logger.error(f"🔍 [DEBUG] assessment.current_achievement: {assessment.get('current_achievement', 'NOT_SET')}")
+            logger.error(f"🔍 [DEBUG] assessment.strengths: {assessment.get('strengths', 'NOT_SET')}")
+            logger.error(f"🔍 [DEBUG] assessment.areas_for_growth: {assessment.get('areas_for_growth', 'NOT_SET')}")
+            logger.error(f"🔍 [DEBUG] assessment.learning_profile: {assessment.get('learning_profile', 'NOT_SET')}")
+            logger.error(f"🔍 [DEBUG] assessment.interests: {assessment.get('interests', 'NOT_SET')}")
+    
     # Check if async processing is requested
     if async_processing:
         logger.info(f"Using async processing for IEP generation for student {iep_data.student_id}")
@@ -169,6 +192,7 @@ async def create_iep_with_rag(
         # Convert any UUID objects to strings
         import json
         from uuid import UUID
+        from ..utils.response_flattener import SimpleIEPFlattener
         
         def make_json_serializable(obj):
             if isinstance(obj, dict):
@@ -180,13 +204,18 @@ async def create_iep_with_rag(
             else:
                 return obj
         
+        # Step 1: Make JSON serializable
         serializable_iep = make_json_serializable(created_iep)
+        
+        # Step 2: Apply flattening to prevent [object Object] errors
+        logger.info(f"🔧 [BACKEND-ROUTER] Applying response flattening for frontend compatibility")
+        flattened_iep = SimpleIEPFlattener.flatten_for_frontend(serializable_iep)
         
         final_elapsed = time.time() - start_time
         logger.info(f"🎉 [BACKEND-ROUTER] RAG IEP creation completed successfully in {final_elapsed:.2f}s")
-        logger.info(f"📄 [BACKEND-ROUTER] Response summary: id={serializable_iep.get('id')}, content_sections={len(serializable_iep.get('content', {}))}, response_size={len(str(serializable_iep))} chars")
+        logger.info(f"📄 [BACKEND-ROUTER] Response summary: id={flattened_iep.get('id')}, content_sections={len(flattened_iep.get('content', {}))}, response_size={len(str(flattened_iep))} chars")
         
-        return serializable_iep
+        return flattened_iep
         
     except ValueError as e:
         elapsed_time = time.time() - start_time
@@ -433,3 +462,41 @@ async def get_async_iep_job_status(
             status_code=500, 
             detail="Failed to get job status"
         )
+
+@router.get("/health/flattener")
+async def get_flattener_health():
+    """Get flattener health status and statistics"""
+    try:
+        from ..utils.response_flattener import get_flattener_statistics
+        
+        stats = get_flattener_statistics()
+        
+        # Determine health status based on error rate
+        if stats['total_operations'] == 0:
+            status = "idle"
+        elif stats['error_rate'] > 0.05:  # More than 5% error rate
+            status = "degraded"
+        elif stats['error_rate'] > 0.01:  # More than 1% error rate
+            status = "warning"
+        else:
+            status = "healthy"
+        
+        return {
+            "status": status,
+            "flattener_enabled": True,
+            "statistics": stats,
+            "configuration": {
+                "detailed_logging": True,
+                "max_log_length": 500
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+            "version": "1.0.0"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting flattener health: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }

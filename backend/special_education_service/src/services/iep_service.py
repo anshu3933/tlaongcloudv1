@@ -146,6 +146,15 @@ class IEPService:
         content_data = initial_data.get("content", {})
         assessment_data = content_data.get("assessment_summary", {})
         
+        # Handle assessment_data being either string or dict
+        if isinstance(assessment_data, str):
+            # If it's a string, treat it as a summary
+            assessment_dict = {"summary": assessment_data}
+        elif isinstance(assessment_data, dict):
+            assessment_dict = assessment_data
+        else:
+            assessment_dict = {}
+        
         # Prepare student data for RAG generation using content field
         student_data = {
             "student_id": str(student_id),
@@ -155,12 +164,12 @@ class IEPService:
             "case_manager_name": content_data.get("case_manager_name", ""),
             "placement_setting": content_data.get("placement_setting", ""),
             "service_hours_per_week": content_data.get("service_hours_per_week", 0),
-            # Extract assessment summary details
-            "current_achievement": assessment_data.get("current_achievement", ""),
-            "strengths": assessment_data.get("strengths", ""),
-            "areas_for_growth": assessment_data.get("areas_for_growth", ""),
-            "learning_profile": assessment_data.get("learning_profile", ""),
-            "interests": assessment_data.get("interests", ""),
+            # Extract assessment summary details with defensive checks
+            "current_achievement": assessment_dict.get("current_achievement", assessment_dict.get("summary", "")),
+            "strengths": assessment_dict.get("strengths", ""),
+            "areas_for_growth": assessment_dict.get("areas_for_growth", ""),
+            "learning_profile": assessment_dict.get("learning_profile", ""),
+            "interests": assessment_dict.get("interests", ""),
             # Extract educational planning if available
             "annual_goals": content_data.get("educational_planning", {}).get("annual_goals", ""),
             "teaching_strategies": content_data.get("educational_planning", {}).get("teaching_strategies", ""),
@@ -342,15 +351,46 @@ class IEPService:
             logger.error(f"IEP keys: {list(iep.keys())}")
             logger.error(f"Content keys: {list(iep.get('content', {}).keys())}")
         
-        # IMPORTANT: Skip all post-creation operations to avoid greenlet errors
-        # These can be handled separately or asynchronously
-        logger.info("Skipping post-creation operations to avoid greenlet issues")
+        # CRITICAL FIX: Enable IEP indexing for RAG functionality
+        logger.info("Performing post-creation operations...")
         
-        # TODO: Move these to background tasks or separate endpoints
-        # - Goal creation: if initial_data.get("goals")
-        # - Audit logging: if self.audit_client
-        # - Vector store indexing: await self._index_iep_content(iep)
+        # Enable vector store indexing for RAG retrieval
+        try:
+            logger.info("Indexing IEP content for RAG retrieval...")
+            await self._index_iep_content(iep)
+            logger.info("IEP content indexed successfully")
+        except Exception as indexing_error:
+            logger.error(f"Failed to index IEP content: {indexing_error}")
+            # Don't fail the entire operation if indexing fails
         
+        # Create goals if provided
+        if initial_data.get("goals"):
+            try:
+                for goal_data in initial_data["goals"]:
+                    await self.repository.create_iep_goal({
+                        "iep_id": iep["id"],
+                        **goal_data
+                    })
+                logger.info("Goals created successfully")
+            except Exception as goal_error:
+                logger.error(f"Failed to create goals: {goal_error}")
+        
+        # Create audit log if available
+        if self.audit_client:
+            try:
+                await self.audit_client.log_action(
+                    entity_type="iep",
+                    entity_id=iep["id"],
+                    action="create",
+                    user_id=user_id,
+                    user_role="system",
+                    changes={"initial_creation": True, "version": iep.get("version", 1)}
+                )
+                logger.info("Audit log created successfully")
+            except Exception as audit_error:
+                logger.error(f"Failed to create audit log: {audit_error}")
+        
+        logger.info("Post-creation operations completed")
         return iep
     
     async def create_iep(

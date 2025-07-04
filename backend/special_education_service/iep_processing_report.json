@@ -1,0 +1,21 @@
+{
+  "file_processed": "bc6672b0-c7be-4d20-ad09-21c0659b1d2f_sampleiep2.txt",
+  "chunks_created": 608,
+  "quality_analysis": {
+    "sections_found": {
+      "Student Information": true,
+      "Disability Information": true,
+      "Present Levels": true,
+      "Goals": true,
+      "Services": true,
+      "Accommodations": true,
+      "Assessment": true,
+      "Transition": true
+    },
+    "quality_score": 8,
+    "max_score": 8,
+    "content_length": 8874
+  },
+  "timestamp": "2025-07-02",
+  "status": "success"
+}
