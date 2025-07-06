@@ -317,34 +317,63 @@ async def process_query(request: Request, query_request: QueryRequest):
                     if doc_id in document_registry:
                         doc_info = document_registry[doc_id]
                         
-                        # Try to read actual document content
+                        # Process document content using local document processor
                         try:
                             file_path = DOCUMENTS_DIR / f"{doc_id}_{doc_info.filename}"
                             if file_path.exists():
-                                # Read the file content
-                                with open(file_path, 'rb') as f:
-                                    content = f.read()
+                                # Import document processing locally
+                                from pathlib import Path
+                                import tempfile
                                 
-                                # Try to decode as text (for simple text files)
-                                try:
-                                    text_content = content.decode('utf-8')[:2000]  # First 2000 chars
-                                    print(f"Read {len(text_content)} characters from {doc_info.filename}")
-                                except UnicodeDecodeError:
-                                    text_content = f"Binary file: {doc_info.filename} ({len(content)} bytes). File type: {doc_info.content_type}"
-                                    print(f"Binary file detected: {doc_info.filename}")
+                                # Determine file type and process accordingly
+                                file_extension = Path(doc_info.filename).suffix.lower()
+                                
+                                if file_extension == '.pdf':
+                                    try:
+                                        from langchain_community.document_loaders import PyPDFLoader
+                                        loader = PyPDFLoader(str(file_path))
+                                        docs = loader.load()
+                                        text_content = "\n\n".join([doc.page_content for doc in docs[:3]])[:2000]  # First 3 pages, 2000 chars
+                                        print(f"Processed PDF {doc_info.filename}: {len(text_content)} characters")
+                                    except Exception as pdf_error:
+                                        print(f"PDF processing failed for {doc_info.filename}: {pdf_error}")
+                                        text_content = f"Unable to process PDF content from {doc_info.filename}"
+                                
+                                elif file_extension == '.docx':
+                                    try:
+                                        from langchain_community.document_loaders import Docx2txtLoader
+                                        loader = Docx2txtLoader(str(file_path))
+                                        docs = loader.load()
+                                        text_content = "\n\n".join([doc.page_content for doc in docs])[:2000]
+                                        print(f"Processed DOCX {doc_info.filename}: {len(text_content)} characters")
+                                    except Exception as docx_error:
+                                        print(f"DOCX processing failed for {doc_info.filename}: {docx_error}")
+                                        text_content = f"Unable to process DOCX content from {doc_info.filename}"
+                                
+                                elif file_extension in ['.txt', '.md']:
+                                    try:
+                                        with open(file_path, 'r', encoding='utf-8') as f:
+                                            text_content = f.read()[:2000]
+                                        print(f"Read text file {doc_info.filename}: {len(text_content)} characters")
+                                    except Exception as text_error:
+                                        print(f"Text file reading failed for {doc_info.filename}: {text_error}")
+                                        text_content = f"Unable to read text content from {doc_info.filename}"
+                                
+                                else:
+                                    text_content = f"Unsupported file type: {doc_info.filename}"
                                 
                                 documents.append({
                                     "id": doc_id,
                                     "content": text_content,
                                     "source": doc_info.filename,
                                     "score": 0.9,
-                                    "metadata": {"document_id": doc_id, "filename": doc_info.filename, "source": "chat_upload"}
+                                    "metadata": {"document_id": doc_id, "filename": doc_info.filename, "source": "chat_upload_local"}
                                 })
-                                print(f"Added chat document {doc_info.filename} to context")
+                                print(f"Added locally processed content from {doc_info.filename}")
                             else:
                                 print(f"File not found: {file_path}")
                         except Exception as e:
-                            print(f"Error reading document {doc_info.filename}: {str(e)}")
+                            print(f"Error processing document {doc_info.filename}: {str(e)}")
                     else:
                         print(f"Warning: Document ID {doc_id} not found in registry")
             else:
@@ -390,12 +419,42 @@ async def process_query(request: Request, query_request: QueryRequest):
                                 try:
                                     file_path = DOCUMENTS_DIR / f"{doc_id}_{doc_info.filename}"
                                     if file_path.exists():
-                                        with open(file_path, 'rb') as f:
-                                            content = f.read()
-                                        try:
-                                            text_content = content.decode('utf-8')[:2000]
-                                        except UnicodeDecodeError:
-                                            text_content = f"Binary file: {doc_info.filename}"
+                                        # Process document content using proper loaders (same as chat-only mode)
+                                        file_extension = Path(doc_info.filename).suffix.lower()
+                                        
+                                        if file_extension == '.pdf':
+                                            try:
+                                                from langchain_community.document_loaders import PyPDFLoader
+                                                loader = PyPDFLoader(str(file_path))
+                                                docs = loader.load()
+                                                text_content = "\n\n".join([doc.page_content for doc in docs[:3]])[:2000]
+                                                print(f"Processed PDF {doc_info.filename}: {len(text_content)} characters")
+                                            except Exception as pdf_error:
+                                                print(f"PDF processing failed for {doc_info.filename}: {pdf_error}")
+                                                text_content = f"Unable to process PDF content from {doc_info.filename}"
+                                        
+                                        elif file_extension == '.docx':
+                                            try:
+                                                from langchain_community.document_loaders import Docx2txtLoader
+                                                loader = Docx2txtLoader(str(file_path))
+                                                docs = loader.load()
+                                                text_content = "\n\n".join([doc.page_content for doc in docs])[:2000]
+                                                print(f"Processed DOCX {doc_info.filename}: {len(text_content)} characters")
+                                            except Exception as docx_error:
+                                                print(f"DOCX processing failed for {doc_info.filename}: {docx_error}")
+                                                text_content = f"Unable to process DOCX content from {doc_info.filename}"
+                                        
+                                        elif file_extension in ['.txt', '.md']:
+                                            try:
+                                                with open(file_path, 'r', encoding='utf-8') as f:
+                                                    text_content = f.read()[:2000]
+                                                print(f"Read text file {doc_info.filename}: {len(text_content)} characters")
+                                            except Exception as text_error:
+                                                print(f"Text file reading failed for {doc_info.filename}: {text_error}")
+                                                text_content = f"Unable to read text content from {doc_info.filename}"
+                                        
+                                        else:
+                                            text_content = f"Unsupported file type: {doc_info.filename}"
                                         
                                         documents.append({
                                             "id": doc_id,

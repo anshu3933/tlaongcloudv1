@@ -4,3 +4,9 @@ uvicorn[standard]==0.27.0
 pydantic==2.5.3
 httpx>=0.28.1
 python-dotenv==1.0.0
+
+# Document processing dependencies
+langchain-community>=0.0.13
+pypdf>=3.0.0
+docx2txt>=0.8
+unstructured>=0.10.0

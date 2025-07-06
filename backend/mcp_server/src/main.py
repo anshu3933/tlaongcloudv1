@@ -552,6 +552,25 @@ async def process_single_document(request: ProcessSingleDocumentRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
 
+class RetrieveDocumentsRequest(BaseModel):
+    query: str
+    top_k: int = 5
+    filter: Optional[Dict] = None
+
+@app.post("/retrieve_documents")
+async def retrieve_documents_http(request: RetrieveDocumentsRequest):
+    """HTTP endpoint for document retrieval"""
+    try:
+        result = await retrieve_documents_impl(
+            query=request.query,
+            top_k=request.top_k,
+            filters=request.filter,
+            context_mode="chat_only"
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve documents: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
