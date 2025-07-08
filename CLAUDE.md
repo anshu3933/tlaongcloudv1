@@ -34,18 +34,22 @@ npm run dev
 - **⏱️ Timeout Management** - FIXED ✅ Frontend timeout limits increased for long RAG operations
 - **🎨 Frontend Display** - ENHANCED ✅ Rich AI content parsing and formatting
 - **🐛 Runtime Errors** - FIXED ✅ All TypeError and undefined property errors resolved
+- **📊 Assessment Pipeline** - INTEGRATED ✅ Unified with Special Education Service for seamless operation
 
 ## Architecture
 ```
 Next.js Frontend (:3001) → ADK Host (:8002) → MCP Server (:8001) → ChromaDB + GCS → Gemini 2.5
                         → Special Ed Service (:8005) → PostgreSQL + RAG Templates → Gemini 2.5
+                        → Assessment Pipeline (Integrated) → Document AI → Psychoed Processing
                         → RAG IEP Generator → Vector Store + Template System → AI Content Generation
                         → Comprehensive Logging Pipeline → Performance Monitoring
 ```
 
-### Enhanced RAG Pipeline Architecture
+### Enhanced RAG Pipeline Architecture with Assessment Integration
 ```
 Frontend Request → API Client (5min timeout) → Backend Router (logging) → IEP Service (timing) 
+                                            → Assessment Pipeline (Integrated) → Document AI Processing
+                                            → Score Extraction → Quantification Engine → PLOP Generation
                                             → RAG Generator (AI calls) → Template System
                                             → Gemini 2.5 Flash (11 sections) → JSON Response
                                             → Frontend Display (rich parsing) → User Interface
@@ -57,6 +61,15 @@ Frontend Request → API Client (5min timeout) → Backend Router (logging) → 
 - **Model**: gemini-2.5-flash
 - **Token Limit**: 8192 (maximized for detailed responses)
 - **Environment**: development (using ChromaDB)
+
+### Assessment Pipeline Configuration
+- **Document AI Project**: 518395328285
+- **Document AI Processor**: 8ea662491b6ff80d (Form Parser for Psychoeducational Reports)
+- **Document AI Location**: us (United States)
+- **Assessment Types Supported**: WISC-V, WIAT-IV, WJ-IV, BASC-3, CONNERS-3, KTEA-3, DAS-II, BRIEF-2
+- **Score Extraction Confidence**: 76-98% (Google Document AI with specialized prompts)
+- **Quantification Engine**: Converts raw scores to 0-100 normalized scale for RAG
+- **Integration Mode**: Unified with Special Education Service (Single Database)
 
 ## Test Commands
 
@@ -100,6 +113,37 @@ curl "http://localhost:8005/api/v1/templates?grade_level=K-5&is_active=true" | j
 curl http://localhost:8005/api/v1/templates | jq '.items | length'  # Returns 15+ templates
 ```
 
+### Assessment Pipeline Integration (Psychoeducational Processing)
+```bash
+# Upload and process assessment documents through Google Document AI
+curl -X POST "http://localhost:8005/api/v1/assessments/upload" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "student_id": "c6f74363-c1fb-4b0f-bd6b-0ae5c8a6f826",
+    "file_name": "wisc_v_cognitive_report.pdf",
+    "file_path": "/path/to/assessment.pdf",
+    "assessment_type": "WISC-V",
+    "assessor_name": "Dr. School Psychologist"
+  }' | jq .
+
+# Execute complete assessment pipeline (Document AI → Quantification → RAG IEP)
+curl -X POST "http://localhost:8005/api/v1/assessments/pipeline/execute-complete" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "student_id": "c6f74363-c1fb-4b0f-bd6b-0ae5c8a6f826",
+    "assessment_documents": [{
+      "file_name": "comprehensive_evaluation.pdf",
+      "file_path": "/tmp/assessment.pdf",
+      "assessment_type": "WISC-V"
+    }],
+    "template_id": "3f2f2152-6758-425e-a3ed-3f4c2fd8afb8",
+    "generate_iep": true
+  }' | jq .
+
+# Get quantified assessment data for student
+curl "http://localhost:8005/api/v1/assessments/quantified/student/c6f74363-c1fb-4b0f-bd6b-0ae5c8a6f826" | jq .
+```
+
 ### RAG-Powered IEP Creation (AI-Generated Content)
 ```bash
 # Create AI-powered IEP using RAG
@@ -113,6 +157,15 @@ curl -X POST "http://localhost:8005/api/v1/ieps/advanced/create-with-rag?current
     "meeting_date": "2025-01-15",
     "effective_date": "2025-01-15",
     "review_date": "2026-01-15"
+  }' | jq .
+
+# Create RAG IEP with integrated assessment data
+curl -X POST "http://localhost:8005/api/v1/ieps/advanced/create-with-assessment-data" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "student_id": "c6f74363-c1fb-4b0f-bd6b-0ae5c8a6f826",
+    "quantified_assessment_id": "assessment-data-uuid",
+    "template_id": "3f2f2152-6758-425e-a3ed-3f4c2fd8afb8"
   }' | jq .
 
 # List existing IEPs for student

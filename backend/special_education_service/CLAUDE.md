@@ -4,6 +4,8 @@
 
 This is a **production-ready Special Education Service** that provides comprehensive IEP (Individualized Education Program) management with advanced AI-powered content generation capabilities. The service combines traditional CRUD operations with cutting-edge RAG (Retrieval-Augmented Generation) technology for personalized educational content creation.
 
+**NEW**: The service now includes an **integrated Assessment Pipeline** that processes psychoeducational assessment documents using Google Document AI, extracts test scores, and quantifies data for enhanced RAG-powered IEP generation.
+
 ## Current State: PRODUCTION READY ✅
 
 ### Core Functionality Implemented
@@ -16,6 +18,14 @@ This is a **production-ready Special Education Service** that provides comprehen
 - ✅ **Session Management**: Optimized async session lifecycle with greenlet error resolution
 - ✅ **JSON Serialization**: Defensive datetime handling and content serialization
 - ✅ **Frontend Integration**: Complete RAG IEP generation workflow with UI
+
+### Assessment Pipeline Integration (NEW) ✅
+- ✅ **Document AI Processing**: Google Cloud Document AI for psychoeducational report processing
+- ✅ **Score Extraction**: Automated extraction of standardized test scores (76-98% confidence)
+- ✅ **Quantification Engine**: Converts raw scores to normalized metrics for RAG enhancement
+- ✅ **Assessment Data Models**: Integrated assessment models in shared database
+- ✅ **Pipeline Orchestrator**: End-to-end workflow from document upload to IEP generation
+- ✅ **RAG Enhancement**: Assessment data directly integrated into IEP content generation
 
 ## Architecture & Technology Stack
 

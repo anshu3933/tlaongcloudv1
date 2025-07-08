@@ -60,6 +60,10 @@ class Student(Base):
     active_iep = relationship("IEP", foreign_keys=[active_iep_id])
     present_levels = relationship("PresentLevel", back_populates="student")
     
+    # Assessment pipeline relationships
+    assessment_documents = relationship("AssessmentDocument", back_populates="student")
+    quantified_assessments = relationship("QuantifiedAssessmentData", back_populates="student")
+    
     def __repr__(self):
         return f"<Student(id={self.id}, name={self.first_name} {self.last_name}, student_id={self.student_id})>"
 
@@ -247,3 +251,194 @@ class WizardSession(Base):
     
     def __repr__(self):
         return f"<WizardSession(id={self.id}, student_id={self.student_id}, step={self.current_step}/{self.total_steps})>"
+
+
+# =============================================================================
+# ASSESSMENT PIPELINE MODELS - Integrated into shared database
+# =============================================================================
+
+from sqlalchemy import Text, Float, Enum as SQLEnum
+import enum
+
+class AssessmentType(enum.Enum):
+    """Standardized assessment types"""
+    WISC_V = "wisc_v"
+    WIAT_IV = "wiat_iv"
+    WJ_IV = "wj_iv"
+    BASC_3 = "basc_3"
+    CONNERS_3 = "conners_3"
+    CTOPP_2 = "ctopp_2"
+    KTEA_3 = "ktea_3"
+    DAS_II = "das_ii"
+    GORT_5 = "gort_5"
+    TOWL_4 = "towl_4"
+    BRIEF_2 = "brief_2"
+    VINELAND_3 = "vineland_3"
+    FBA = "functional_behavior_assessment"
+    CBM = "curriculum_based_measure"
+    OBSERVATION = "teacher_observation"
+    PROGRESS_MONITORING = "progress_monitoring"
+
+class AssessmentDocument(Base):
+    """Stores uploaded assessment documents"""
+    __tablename__ = "assessment_documents"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False)
+    document_type = Column(SQLEnum(AssessmentType), nullable=False)
+    file_path = Column(Text, nullable=False)
+    file_name = Column(String(255), nullable=False)
+    gcs_path = Column(Text)  # Google Cloud Storage path
+    upload_date = Column(DateTime(timezone=True), server_default=func.now())
+    processing_status = Column(String(50), default="pending")  # pending, processing, completed, failed
+    
+    # Document metadata
+    assessment_date = Column(DateTime(timezone=True))
+    assessor_name = Column(String(255))
+    assessor_title = Column(String(255))
+    assessment_location = Column(String(255))
+    
+    # Processing metadata
+    extraction_confidence = Column(Float)  # 0-1 confidence score
+    processing_duration = Column(Float)  # seconds
+    error_message = Column(Text)
+    
+    # Relationships
+    student = relationship("Student", back_populates="assessment_documents")
+    psychoed_scores = relationship("PsychoedScore", back_populates="document", cascade="all, delete-orphan")
+    extracted_data = relationship("ExtractedAssessmentData", back_populates="document", cascade="all, delete-orphan")
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    def __repr__(self):
+        return f"<AssessmentDocument(id={self.id}, student_id={self.student_id}, type={self.document_type})>"
+
+class PsychoedScore(Base):
+    """Individual test scores extracted from assessments"""
+    __tablename__ = "psychoed_scores"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id = Column(UUID(as_uuid=True), ForeignKey("assessment_documents.id"), nullable=False)
+    
+    # Test information
+    test_name = Column(String(100), nullable=False)  # WISC-V, WIAT-IV, etc.
+    subtest_name = Column(String(100), nullable=False)  # Verbal Comprehension, Block Design, etc.
+    score_type = Column(String(50), nullable=False)  # standard_score, percentile, scaled_score, etc.
+    
+    # Score values
+    raw_score = Column(Integer)
+    standard_score = Column(Integer)
+    percentile_rank = Column(Integer)
+    scaled_score = Column(Integer)
+    grade_equivalent = Column(String(10))  # "3.5", "K.2", etc.
+    age_equivalent = Column(String(10))   # "8:3", "12:11", etc.
+    
+    # Confidence and reliability
+    confidence_interval_lower = Column(Integer)
+    confidence_interval_upper = Column(Integer)
+    confidence_level = Column(Integer, default=95)  # 90, 95, 99
+    extraction_confidence = Column(Float)  # How confident we are in the extraction
+    
+    # Metadata
+    normative_sample = Column(String(100))  # Which norm was used
+    test_date = Column(DateTime(timezone=True))
+    basal_score = Column(Integer)
+    ceiling_score = Column(Integer)
+    
+    # Relationships
+    document = relationship("AssessmentDocument", back_populates="psychoed_scores")
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    def __repr__(self):
+        return f"<PsychoedScore(test={self.test_name}, subtest={self.subtest_name}, score={self.standard_score})>"
+
+class QuantifiedAssessmentData(Base):
+    """Quantified and synthesized assessment data ready for RAG"""
+    __tablename__ = "quantified_assessment_data"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False)
+    assessment_date = Column(DateTime(timezone=True), nullable=False)
+    
+    # Composite scores (normalized to 0-100 scale)
+    cognitive_composite = Column(Float)
+    academic_composite = Column(Float)
+    behavioral_composite = Column(Float)
+    social_emotional_composite = Column(Float)
+    adaptive_composite = Column(Float)
+    executive_composite = Column(Float)
+    
+    # Domain-specific composites
+    reading_composite = Column(Float)
+    math_composite = Column(Float)
+    writing_composite = Column(Float)
+    language_composite = Column(Float)
+    
+    # Standardized Present Levels of Performance (PLOP) data
+    standardized_plop = Column(JSON)
+    
+    # Growth and progress data
+    growth_rate = Column(JSON)  # Domain-specific growth rates
+    progress_indicators = Column(JSON)  # Structured progress data
+    
+    # Learning profiles
+    learning_style_profile = Column(JSON)
+    cognitive_processing_profile = Column(JSON)
+    
+    # Goals and recommendations
+    priority_goals = Column(JSON)
+    service_recommendations = Column(JSON)
+    accommodation_recommendations = Column(JSON)
+    
+    # Eligibility determination
+    eligibility_category = Column(String(100))
+    primary_disability = Column(String(100))
+    secondary_disabilities = Column(JSON)
+    
+    # Confidence and source tracking
+    confidence_metrics = Column(JSON)
+    source_documents = Column(JSON)  # List of source document IDs
+    
+    # Relationships
+    student = relationship("Student", back_populates="quantified_assessments")
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    def __repr__(self):
+        return f"<QuantifiedAssessmentData(id={self.id}, student_id={self.student_id}, date={self.assessment_date})>"
+
+class ExtractedAssessmentData(Base):
+    """Raw extracted data from assessment documents before quantification"""
+    __tablename__ = "extracted_assessment_data"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id = Column(UUID(as_uuid=True), ForeignKey("assessment_documents.id"), nullable=False)
+    
+    # Raw extracted content
+    raw_text = Column(Text)
+    structured_data = Column(JSON)  # Structured extraction results
+    
+    # Extraction metadata
+    extraction_method = Column(String(50))  # document_ai, manual, ocr
+    extraction_confidence = Column(Float)
+    completeness_score = Column(Float)  # How complete is the extraction
+    
+    # Quality indicators
+    pages_processed = Column(Integer)
+    total_pages = Column(Integer)
+    processing_errors = Column(JSON)
+    
+    # Relationships
+    document = relationship("AssessmentDocument", back_populates="extracted_data")
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    def __repr__(self):
+        return f"<ExtractedAssessmentData(id={self.id}, confidence={self.extraction_confidence})>"
