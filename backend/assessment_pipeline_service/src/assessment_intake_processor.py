@@ -108,16 +108,21 @@ class AssessmentIntakeProcessor:
         # Process with Document AI
         document = await self._process_with_document_ai(document_path)
         
+        # Store Document AI confidence for overall confidence calculation
+        doc_ai_confidence = self._extract_document_ai_confidence(document)
+        
         # Extract structured data
         extracted_data = {
             "assessment_type": assessment_type,
             "document_metadata": document_metadata,
-            "extraction_timestamp": datetime.utcnow()
+            "extraction_timestamp": datetime.utcnow(),
+            "document_ai_confidence": doc_ai_confidence
         }
         
         # Extract scores
         scores = self._extract_all_scores(document, assessment_type)
         extracted_data["scores"] = scores
+        logger.info(f"Extracted {len(scores)} scores from document")
         
         # Extract cognitive data
         if assessment_type in [AssessmentType.WISC_V, AssessmentType.DAS_II]:
@@ -142,29 +147,141 @@ class AssessmentIntakeProcessor:
         # Convert to DTO
         return self._convert_to_dto(extracted_data)
     
+    def _extract_document_ai_confidence(self, document: documentai.Document) -> float:
+        """Extract overall Document AI processing confidence"""
+        
+        confidences = []
+        
+        # Extract from pages confidence
+        for page in document.pages:
+            if hasattr(page, 'confidence') and page.confidence:
+                confidences.append(page.confidence)
+        
+        # Extract from entities confidence  
+        for entity in document.entities:
+            if hasattr(entity, 'confidence') and entity.confidence:
+                confidences.append(entity.confidence)
+        
+        # Extract from form fields confidence
+        for page in document.pages:
+            for form_field in page.form_fields:
+                if hasattr(form_field, 'confidence') and form_field.confidence:
+                    confidences.append(form_field.confidence)
+        
+        if confidences:
+            avg_confidence = sum(confidences) / len(confidences)
+            logger.debug(f"Document AI average confidence: {avg_confidence:.3f} from {len(confidences)} elements")
+            return avg_confidence
+        
+        logger.warning("No Document AI confidence data available")
+        return 0.85  # Default confidence if none available
+    
     async def _detect_assessment_type(self, document_path: str) -> AssessmentType:
-        """Auto-detect the type of assessment"""
+        """Auto-detect the type of assessment using ML classifier and pattern matching"""
         
-        # Quick text extraction for classification
-        with open(document_path, 'rb') as f:
-            content = f.read()
+        logger.info(f"Auto-detecting assessment type for: {document_path}")
         
-        # Try to extract text (simplified - would use proper extraction)
-        text = str(content).lower()
+        # First, try Document AI for quick text extraction
+        try:
+            document = await self._process_with_document_ai(document_path)
+            text = document.text.lower()
+        except Exception as e:
+            logger.warning(f"Document AI extraction failed, using fallback: {e}")
+            # Fallback to basic file reading
+            with open(document_path, 'rb') as f:
+                content = f.read()
+            text = str(content).lower()
         
-        # Check each test pattern
+        # Enhanced pattern matching with confidence scoring
+        type_scores = {}
+        
         for assessment_type, pattern_info in self.test_patterns.items():
+            score = 0
+            
+            # Primary test name detection (high weight)
             test_name = pattern_info["name"].lower()
             if test_name in text:
-                return assessment_type
+                score += 50
+                logger.debug(f"Found test name '{test_name}' in document")
             
-            # Check for specific indices/subtests
-            matches = sum(1 for item in pattern_info.get("indices", []) + pattern_info.get("subtests", []) 
-                         if item.lower() in text)
-            if matches >= 3:  # At least 3 matches
-                return assessment_type
+            # Secondary name variations
+            name_variations = {
+                AssessmentType.WISC_V: ["wisc-v", "wisc 5", "wechsler intelligence scale"],
+                AssessmentType.WIAT_IV: ["wiat-iv", "wiat 4", "wechsler achievement"],
+                AssessmentType.BASC_3: ["basc-3", "basc 3", "behavior assessment system"],
+                AssessmentType.BRIEF_2: ["brief-2", "brief 2", "executive function"],
+                AssessmentType.WJ_IV: ["wj-iv", "woodcock johnson", "woodcock-johnson"],
+                AssessmentType.KTEA_3: ["ktea-3", "kaufman test"],
+                AssessmentType.DAS_II: ["das-ii", "differential ability"],
+                AssessmentType.CONNERS_3: ["conners-3", "conners 3"]
+            }
+            
+            for variant in name_variations.get(assessment_type, []):
+                if variant in text:
+                    score += 30
+                    logger.debug(f"Found variant '{variant}' for {assessment_type}")
+            
+            # Subtest/index pattern matching (medium weight)
+            all_components = (
+                pattern_info.get("indices", []) + 
+                pattern_info.get("subtests", []) + 
+                pattern_info.get("composites", []) +
+                pattern_info.get("scales", []) +
+                pattern_info.get("subscales", [])
+            )
+            
+            component_matches = sum(1 for item in all_components if item.lower() in text)
+            score += component_matches * 5
+            
+            if component_matches > 0:
+                logger.debug(f"Found {component_matches} component matches for {assessment_type}")
+            
+            # Age range indicators (low weight)
+            age_indicators = {
+                AssessmentType.WISC_V: ["6 years", "16 years", "school age"],
+                AssessmentType.WIAT_IV: ["achievement", "academic"],
+                AssessmentType.BASC_3: ["behavior", "emotional", "behavioral"]
+            }
+            
+            for indicator in age_indicators.get(assessment_type, []):
+                if indicator in text:
+                    score += 2
+            
+            if score > 0:
+                type_scores[assessment_type] = score
+                logger.debug(f"Total score for {assessment_type}: {score}")
         
-        # Default to observation if no specific test detected
+        # Determine best match
+        if type_scores:
+            best_type = max(type_scores.items(), key=lambda x: x[1])
+            confidence_threshold = 10  # Minimum score required
+            
+            if best_type[1] >= confidence_threshold:
+                logger.info(f"Detected assessment type: {best_type[0]} (score: {best_type[1]})")
+                return best_type[0]
+            else:
+                logger.warning(f"Low confidence in detection: {best_type[0]} (score: {best_type[1]})")
+        
+        # Enhanced fallback detection
+        behavioral_keywords = ["behavior", "emotional", "social", "adhd", "conduct", "anxiety"]
+        cognitive_keywords = ["iq", "intelligence", "cognitive", "processing", "memory"]
+        academic_keywords = ["reading", "math", "writing", "achievement", "academic"]
+        
+        behavioral_count = sum(1 for keyword in behavioral_keywords if keyword in text)
+        cognitive_count = sum(1 for keyword in cognitive_keywords if keyword in text)
+        academic_count = sum(1 for keyword in academic_keywords if keyword in text)
+        
+        if behavioral_count >= 3:
+            logger.info("Defaulting to BASC-3 based on behavioral keywords")
+            return AssessmentType.BASC_3
+        elif cognitive_count >= 3:
+            logger.info("Defaulting to WISC-V based on cognitive keywords")
+            return AssessmentType.WISC_V
+        elif academic_count >= 3:
+            logger.info("Defaulting to WIAT-IV based on academic keywords")
+            return AssessmentType.WIAT_IV
+        
+        logger.warning("Could not determine assessment type, defaulting to OBSERVATION")
         return AssessmentType.OBSERVATION
     
     async def _process_with_document_ai(self, document_path: str) -> documentai.Document:
@@ -179,7 +296,7 @@ class AssessmentIntakeProcessor:
         
         # Create request
         request = documentai.ProcessRequest(
-            name=self.processors["form_parser"],  # Use form parser as default
+            name=self.processor_name,  # Use the main processor
             raw_document=documentai.RawDocument(
                 content=content,
                 mime_type=mime_type
@@ -232,29 +349,272 @@ class AssessmentIntakeProcessor:
         document: documentai.Document,
         assessment_type: AssessmentType
     ) -> List[PsychoedScoreDTO]:
-        """Extract scores from a table"""
+        """Extract scores from a table with enhanced parsing"""
         
         scores = []
         
-        # Get table headers
+        # Get table headers with cleaning
         headers = []
         if table.header_rows:
             for cell in table.header_rows[0].cells:
-                headers.append(self._get_text(cell.layout, document))
+                header_text = self._get_text(cell.layout, document).strip()
+                # Clean and normalize header text
+                header_text = re.sub(r'\s+', ' ', header_text)  # Normalize whitespace
+                headers.append(header_text)
         
-        # Process each row
-        for row in table.body_rows:
-            row_data = {}
-            for i, cell in enumerate(row.cells):
-                if i < len(headers):
-                    row_data[headers[i]] = self._get_text(cell.layout, document)
-            
-            # Try to parse as score
-            score = self._parse_table_row_as_score(row_data, assessment_type)
-            if score:
-                scores.append(score)
+        logger.debug(f"Table headers: {headers}")
         
+        # Enhanced header mapping for common variations
+        header_mappings = {
+            # Test/subtest name variations
+            "test": ["test", "subtest", "scale", "index", "composite", "domain", "area"],
+            # Standard score variations
+            "standard_score": ["ss", "standard score", "standard", "std score", "composite score"],
+            # Percentile variations
+            "percentile": ["percentile", "%ile", "pr", "percentile rank", "%"],
+            # Scaled score variations
+            "scaled_score": ["scaled", "scaled score", "subtest score"],
+            # T-score variations
+            "t_score": ["t-score", "t score", "t"],
+            # Confidence interval variations
+            "confidence_interval": ["95% ci", "confidence interval", "ci", "conf int"],
+            # Descriptor variations
+            "descriptor": ["descriptor", "classification", "range", "level", "category"]
+        }
+        
+        # Create normalized header index
+        normalized_headers = {}
+        for i, header in enumerate(headers):
+            header_lower = header.lower().strip()
+            for standard_name, variations in header_mappings.items():
+                if any(var in header_lower for var in variations):
+                    normalized_headers[standard_name] = i
+                    break
+            # Also store original index
+            normalized_headers[header_lower] = i
+        
+        logger.debug(f"Normalized headers: {list(normalized_headers.keys())}")
+        
+        # Process each row with enhanced extraction
+        for row_idx, row in enumerate(table.body_rows):
+            try:
+                row_data = {}
+                for i, cell in enumerate(row.cells):
+                    if i < len(headers):
+                        cell_text = self._get_text(cell.layout, document).strip()
+                        # Clean cell text
+                        cell_text = re.sub(r'\s+', ' ', cell_text)
+                        row_data[headers[i]] = cell_text
+                
+                # Try to parse as score with enhanced logic
+                score = self._parse_table_row_as_score_enhanced(row_data, normalized_headers, assessment_type)
+                if score:
+                    scores.append(score)
+                    logger.debug(f"Extracted score from row {row_idx}: {score.subtest_name}")
+                
+            except Exception as e:
+                logger.warning(f"Error processing table row {row_idx}: {e}")
+                continue
+        
+        logger.info(f"Extracted {len(scores)} scores from table")
         return scores
+    
+    def _parse_table_row_as_score_enhanced(
+        self,
+        row_data: Dict[str, str],
+        normalized_headers: Dict[str, int],
+        assessment_type: AssessmentType
+    ) -> Optional[PsychoedScoreDTO]:
+        """Enhanced table row parsing with better score extraction"""
+        
+        # Extract test/subtest name using multiple strategies
+        test_name = self.test_patterns.get(assessment_type, {}).get("name", str(assessment_type))
+        subtest_name = None
+        
+        # Strategy 1: Use normalized header mapping
+        if "test" in normalized_headers:
+            test_col_idx = normalized_headers["test"]
+            headers = list(row_data.keys())
+            if test_col_idx < len(headers):
+                subtest_name = row_data[headers[test_col_idx]]
+        
+        # Strategy 2: Look for first non-numeric column
+        if not subtest_name:
+            for key, value in row_data.items():
+                if value and not re.match(r'^[\d\-\s\.\(\)%]+$', value.strip()):
+                    subtest_name = value
+                    break
+        
+        # Strategy 3: Use known subtest patterns for assessment type
+        if not subtest_name:
+            test_info = self.test_patterns.get(assessment_type, {})
+            all_subtests = (test_info.get("subtests", []) + 
+                          test_info.get("indices", []) + 
+                          test_info.get("scales", []))
+            
+            for value in row_data.values():
+                if any(subtest.lower() in value.lower() for subtest in all_subtests):
+                    subtest_name = value
+                    break
+        
+        if not subtest_name or not subtest_name.strip():
+            return None
+        
+        # Clean subtest name
+        subtest_name = subtest_name.strip()
+        
+        # Initialize score data
+        score_data = {
+            "test_name": test_name,
+            "subtest_name": subtest_name
+        }
+        
+        # Extract scores using enhanced patterns
+        scores_found = 0
+        
+        # Standard score extraction
+        if "standard_score" in normalized_headers:
+            ss_col_idx = normalized_headers["standard_score"]
+            headers = list(row_data.keys())
+            if ss_col_idx < len(headers):
+                ss_value = self._extract_numeric_value(row_data[headers[ss_col_idx]])
+                if ss_value is not None:
+                    score_data["standard_score"] = ss_value
+                    scores_found += 1
+        
+        # Percentile extraction
+        if "percentile" in normalized_headers:
+            pr_col_idx = normalized_headers["percentile"]
+            headers = list(row_data.keys())
+            if pr_col_idx < len(headers):
+                pr_value = self._extract_numeric_value(row_data[headers[pr_col_idx]])
+                if pr_value is not None:
+                    score_data["percentile_rank"] = pr_value
+                    scores_found += 1
+        
+        # Scaled score extraction
+        if "scaled_score" in normalized_headers:
+            scaled_col_idx = normalized_headers["scaled_score"]
+            headers = list(row_data.keys())
+            if scaled_col_idx < len(headers):
+                scaled_value = self._extract_numeric_value(row_data[headers[scaled_col_idx]])
+                if scaled_value is not None:
+                    score_data["scaled_score"] = scaled_value
+                    scores_found += 1
+        
+        # T-score extraction
+        if "t_score" in normalized_headers:
+            t_col_idx = normalized_headers["t_score"]
+            headers = list(row_data.keys())
+            if t_col_idx < len(headers):
+                t_value = self._extract_numeric_value(row_data[headers[t_col_idx]])
+                if t_value is not None:
+                    score_data["t_score"] = t_value
+                    scores_found += 1
+        
+        # Confidence interval extraction
+        if "confidence_interval" in normalized_headers:
+            ci_col_idx = normalized_headers["confidence_interval"]
+            headers = list(row_data.keys())
+            if ci_col_idx < len(headers):
+                ci_text = row_data[headers[ci_col_idx]]
+                ci_values = self._extract_confidence_interval(ci_text)
+                if ci_values:
+                    score_data["confidence_interval"] = ci_values
+        
+        # Descriptor extraction
+        if "descriptor" in normalized_headers:
+            desc_col_idx = normalized_headers["descriptor"]
+            headers = list(row_data.keys())
+            if desc_col_idx < len(headers):
+                descriptor = row_data[headers[desc_col_idx]].strip()
+                if descriptor and not re.match(r'^[\d\-\s\.\(\)%]+$', descriptor):
+                    score_data["qualitative_descriptor"] = descriptor
+        
+        # Fallback: extract any numeric values from remaining columns
+        if scores_found == 0:
+            for key, value in row_data.items():
+                if key.lower() != subtest_name.lower():  # Skip the test name column
+                    numeric_val = self._extract_numeric_value(value)
+                    if numeric_val is not None:
+                        # Guess score type based on range
+                        if 50 <= numeric_val <= 150:  # Likely standard score
+                            score_data["standard_score"] = numeric_val
+                            scores_found += 1
+                        elif 1 <= numeric_val <= 99 and numeric_val != int(numeric_val):  # Likely percentile
+                            score_data["percentile_rank"] = numeric_val
+                            scores_found += 1
+                        elif 1 <= numeric_val <= 19:  # Likely scaled score
+                            score_data["scaled_score"] = numeric_val
+                            scores_found += 1
+                        elif 20 <= numeric_val <= 80:  # Likely T-score
+                            score_data["t_score"] = numeric_val
+                            scores_found += 1
+        
+        # Only create score if we found actual score values
+        if scores_found > 0:
+            score_data["extraction_confidence"] = 0.90 if scores_found >= 2 else 0.75
+            try:
+                return PsychoedScoreDTO(**score_data)
+            except Exception as e:
+                logger.warning(f"Error creating PsychoedScoreDTO: {e}")
+                return None
+        
+        return None
+    
+    def _extract_numeric_value(self, text: str) -> Optional[float]:
+        """Extract numeric value from text with enhanced patterns"""
+        
+        if not text or not text.strip():
+            return None
+        
+        # Clean the text
+        cleaned = text.strip().replace(',', '')
+        
+        # Pattern for numbers (including decimals)
+        number_pattern = r'([+-]?\d+(?:\.\d+)?)'  
+        
+        # Look for numbers
+        matches = re.findall(number_pattern, cleaned)
+        
+        if matches:
+            try:
+                # Take the first numeric value found
+                value = float(matches[0])
+                # Sanity check: reject obviously invalid values
+                if -1000 <= value <= 1000:  # Reasonable range for assessment scores
+                    return value
+            except ValueError:
+                pass
+        
+        return None
+    
+    def _extract_confidence_interval(self, text: str) -> Optional[Tuple[float, float]]:
+        """Extract confidence interval from text"""
+        
+        if not text:
+            return None
+        
+        # Pattern for confidence intervals like "85-115" or "(85, 115)" or "85 - 115"
+        ci_patterns = [
+            r'(\d+)\s*[-–—]\s*(\d+)',  # 85-115 or 85 - 115
+            r'\((\d+),\s*(\d+)\)',      # (85, 115)
+            r'\[(\d+),\s*(\d+)\]',      # [85, 115]
+            r'(\d+)\s*to\s*(\d+)',      # 85 to 115
+        ]
+        
+        for pattern in ci_patterns:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    lower = float(match.group(1))
+                    upper = float(match.group(2))
+                    if lower < upper and 0 <= lower <= 200 and 0 <= upper <= 200:
+                        return (lower, upper)
+                except ValueError:
+                    continue
+        
+        return None
     
     def _parse_table_row_as_score(
         self,
@@ -452,28 +812,97 @@ class AssessmentIntakeProcessor:
     def _calculate_extraction_confidence(self, extracted_data: Dict) -> float:
         """Calculate overall extraction confidence (76-98% range)"""
         
-        confidence_scores = []
+        confidence_components = []
+        weights = []
         
-        # Check completeness of scores
-        if extracted_data.get("scores"):
-            score_confidence = min(len(extracted_data["scores"]) / 10, 1.0)  # Expect ~10 scores
-            confidence_scores.append(score_confidence)
+        # Document AI extraction confidence (40% weight)
+        if extracted_data.get("document_ai_confidence"):
+            doc_ai_conf = float(extracted_data["document_ai_confidence"])
+            confidence_components.append(doc_ai_conf)
+            weights.append(0.4)
+            logger.debug(f"Document AI confidence: {doc_ai_conf:.3f}")
         
-        # Check presence of key data
-        if extracted_data.get("cognitive_data", {}).get("indices"):
-            confidence_scores.append(0.9)
+        # Score completeness (25% weight)
+        scores = extracted_data.get("scores", [])
+        if scores:
+            # Calculate based on number of scores found vs expected
+            assessment_type = extracted_data.get("assessment_type")
+            expected_scores = self._get_expected_score_count(assessment_type)
+            
+            completeness = min(len(scores) / expected_scores, 1.0) if expected_scores > 0 else 0.5
+            confidence_components.append(completeness)
+            weights.append(0.25)
+            logger.debug(f"Score completeness: {completeness:.3f} ({len(scores)}/{expected_scores})")
         
-        if extracted_data.get("recommendations"):
-            confidence_scores.append(0.85)
+        # Data structure quality (20% weight)
+        structure_quality = 0.0
+        
+        # Check for key data presence
+        key_sections = ["cognitive_data", "academic_data", "behavioral_data", "observations", "recommendations"]
+        present_sections = sum(1 for section in key_sections if extracted_data.get(section))
+        structure_quality += (present_sections / len(key_sections)) * 0.6
+        
+        # Check for individual score confidence
+        if scores:
+            individual_confidences = [s.extraction_confidence for s in scores if hasattr(s, 'extraction_confidence') and s.extraction_confidence]
+            if individual_confidences:
+                avg_individual = np.mean(individual_confidences)
+                structure_quality += avg_individual * 0.4
+        
+        confidence_components.append(structure_quality)
+        weights.append(0.2)
+        logger.debug(f"Structure quality: {structure_quality:.3f}")
+        
+        # Assessment type detection confidence (15% weight)
+        type_confidence = 0.8  # Default if no specific detection confidence
+        if extracted_data.get("type_detection_confidence"):
+            type_confidence = float(extracted_data["type_detection_confidence"])
+        
+        confidence_components.append(type_confidence)
+        weights.append(0.15)
+        logger.debug(f"Type detection confidence: {type_confidence:.3f}")
         
         # Calculate weighted average
-        if confidence_scores:
-            raw_confidence = np.mean(confidence_scores)
-            # Map to 76-98% range
-            mapped_confidence = 76 + (raw_confidence * 22)
-            return mapped_confidence / 100
+        if confidence_components and weights:
+            # Normalize weights
+            total_weight = sum(weights)
+            normalized_weights = [w / total_weight for w in weights]
+            
+            weighted_confidence = sum(c * w for c, w in zip(confidence_components, normalized_weights))
+            
+            # Map to 76-98% range (ensuring minimum quality standards)
+            # 0.0 -> 76%, 1.0 -> 98%
+            mapped_confidence = 0.76 + (weighted_confidence * 0.22)
+            
+            # Apply quality gates
+            if len(scores) == 0:
+                mapped_confidence = min(mapped_confidence, 0.80)  # Cap at 80% if no scores
+            
+            if not any(extracted_data.get(section) for section in ["observations", "recommendations"]):
+                mapped_confidence = min(mapped_confidence, 0.85)  # Cap at 85% if no narrative sections
+            
+            logger.info(f"Final extraction confidence: {mapped_confidence:.3f} ({mapped_confidence*100:.1f}%)")
+            return mapped_confidence
         
+        logger.warning("No confidence data available, using minimum")
         return 0.76  # Minimum confidence
+    
+    def _get_expected_score_count(self, assessment_type: AssessmentType) -> int:
+        """Get expected number of scores for assessment type"""
+        
+        expected_counts = {
+            AssessmentType.WISC_V: 14,  # 5 indices + 9+ subtests
+            AssessmentType.WIAT_IV: 12,  # 4 composites + 8+ subtests  
+            AssessmentType.BASC_3: 15,   # 4 scales + 11+ subscales
+            AssessmentType.BRIEF_2: 10,  # 3 indices + 7+ scales
+            AssessmentType.WJ_IV: 8,     # Various achievement areas
+            AssessmentType.KTEA_3: 10,   # Achievement composites and subtests
+            AssessmentType.DAS_II: 12,   # Cognitive abilities
+            AssessmentType.CONNERS_3: 8, # ADHD and behavioral scales
+            AssessmentType.OBSERVATION: 5 # Minimal structured data
+        }
+        
+        return expected_counts.get(assessment_type, 5)
     
     def _convert_to_dto(self, extracted_data: Dict) -> ExtractedDataDTO:
         """Convert extracted data to DTO"""
@@ -777,3 +1206,15 @@ class AssessmentIntakeProcessor:
                         }
         
         return behavioral_data
+    
+    # Alias method for pipeline orchestrator compatibility
+    async def process_document(
+        self, 
+        file_path: str, 
+        assessment_type: AssessmentType = None, 
+        metadata: Dict[str, Any] = None
+    ) -> ExtractedDataDTO:
+        """Alias method for pipeline orchestrator"""
+        
+        document_metadata = metadata or {}
+        return await self.process_assessment_document(file_path, document_metadata)

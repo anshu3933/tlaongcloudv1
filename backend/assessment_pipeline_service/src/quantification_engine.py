@@ -1,936 +1,1070 @@
 """
 Stage 2: Present Level Quantification Engine
-Converts extracted assessment data to quantified metrics for RAG
+Converts raw assessment data to standardized PLOP metrics
 """
 import logging
-from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass
-from datetime import datetime
+import json
 import numpy as np
-import statistics
+from typing import Dict, List, Any, Optional, Tuple
+from datetime import datetime
+from pathlib import Path
 
-from assessment_pipeline_service.models.assessment_models import (
-    PsychoedScore, CognitiveProfile, AcademicProfile, 
-    BehavioralProfile, QuantifiedAssessmentData
-)
 from assessment_pipeline_service.schemas.assessment_schemas import (
-    PsychoedScoreDTO, ExtractedDataDTO, QuantifiedMetricsDTO,
-    CognitiveProfileDTO, AcademicProfileDTO, BehavioralProfileDTO
+    ExtractedDataDTO, QuantifiedMetricsDTO, PsychoedScoreDTO
 )
+from assessment_pipeline_service.models.assessment_models import AssessmentType
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class AcademicMetrics:
-    """Quantified academic performance metrics"""
-    skill_area: str
-    grade_level_equivalence: float
-    accuracy_percentage: Optional[float]
-    fluency_measure: Optional[float]
-    percentile_rank: Optional[float]
-    standard_score: Optional[float]
-    growth_rate: Optional[float]
-    data_points: List[Dict[str, Any]]
-
-@dataclass
-class BehaviorFrequencyMatrix:
-    """Behavioral observation quantification"""
-    behavior_category: str
-    frequency_per_hour: Optional[float]
-    duration_minutes: Optional[float]
-    intensity_scale: Optional[float]  # 1-5
-    setting: str
-    antecedents: List[str]
-    consequences: List[str]
-    success_rate: Optional[float]
-
 class QuantificationEngine:
-    """Convert assessment data to quantified metrics"""
+    """Main engine for converting extracted assessment data to quantified metrics"""
     
     def __init__(self):
-        # Academic domain mappings
-        self.academic_domains = {
-            "reading": ["decoding", "fluency", "comprehension", "phonemic_awareness"],
-            "mathematics": ["computation", "problem_solving", "number_sense", "fluency"],
-            "written_language": ["mechanics", "expression", "fluency", "organization"],
-            "oral_language": ["receptive", "expressive", "pragmatics"]
-        }
+        self.academic_quantifier = AcademicQuantifier()
+        self.behavioral_quantifier = BehavioralQuantifier()
+        self.normative_data = NormativeDataProcessor()
         
-        # Behavioral domains
-        self.behavioral_domains = {
-            "attention": ["sustained", "selective", "divided", "shifting"],
-            "executive_function": ["planning", "organization", "inhibition", "flexibility"],
-            "social_skills": ["interaction", "communication", "cooperation", "empathy"],
-            "emotional_regulation": ["awareness", "expression", "coping", "resilience"]
-        }
-        
-        # Standard score conversions
-        self.score_conversions = {
-            "percentile_to_standard": self._percentile_to_standard_score,
-            "standard_to_percentile": self._standard_score_to_percentile,
-            "scaled_to_standard": lambda x: (x - 10) * 15/3 + 100,  # Scaled (M=10, SD=3) to Standard
-            "t_to_standard": lambda x: (x - 50) * 15/10 + 100,      # T-score to Standard
-        }
-        
-        # Grade equivalent norms (simplified)
-        self.grade_norms = self._load_grade_norms()
+        # Load normative data tables
+        self._load_normative_data()
+    
+    def _load_normative_data(self):
+        """Load grade level norms and conversion tables"""
+        try:
+            # Load from data files or use defaults
+            data_dir = Path(__file__).parent.parent / "data"
+            
+            if (data_dir / "grade_level_norms.json").exists():
+                with open(data_dir / "grade_level_norms.json", 'r') as f:
+                    self.grade_norms = json.load(f)
+            else:
+                self.grade_norms = self._get_default_grade_norms()
+            
+            if (data_dir / "conversion_tables.json").exists():
+                with open(data_dir / "conversion_tables.json", 'r') as f:
+                    self.conversion_tables = json.load(f)
+            else:
+                self.conversion_tables = self._get_default_conversion_tables()
+                
+            logger.info("Normative data loaded successfully")
+            
+        except Exception as e:
+            logger.warning(f"Error loading normative data: {e}, using defaults")
+            self.grade_norms = self._get_default_grade_norms()
+            self.conversion_tables = self._get_default_conversion_tables()
     
     async def quantify_assessment_data(
-        self,
-        extracted_data: List[ExtractedDataDTO],
+        self, 
+        extracted_data: List[ExtractedDataDTO], 
         student_info: Dict[str, Any]
-    ) -> QuantifiedAssessmentData:
-        """Main quantification process"""
+    ) -> QuantifiedMetricsDTO:
+        """Main quantification method - converts extracted data to structured metrics"""
         
-        logger.info(f"Quantifying data for student {student_info.get('id')}")
+        logger.info(f"Quantifying assessment data for student: {student_info.get('id', 'unknown')}")
         
-        # Initialize quantified data structure
-        quantified = QuantifiedAssessmentData(
-            student_id=student_info.get("id"),
-            assessment_date=datetime.utcnow()
-        )
+        # Initialize quantified metrics structure
+        quantified_metrics = {
+            "student_id": student_info.get("id"),
+            "quantification_date": datetime.utcnow(),
+            "academic_metrics": {},
+            "behavioral_metrics": {},
+            "composite_profiles": {},
+            "strengths_and_needs": {},
+            "grade_level_performance": {},
+            "confidence_scores": {}
+        }
         
-        # Process cognitive data
-        cognitive_metrics = await self._quantify_cognitive_data(extracted_data)
-        quantified.cognitive_composite = cognitive_metrics.get("composite", 0)
-        quantified.cognitive_processing_profile = cognitive_metrics.get("profile", {})
+        # Combine all scores from multiple documents
+        all_scores = []
+        all_observations = []
         
-        # Process academic data
-        academic_metrics = await self._quantify_academic_data(extracted_data, student_info)
-        quantified.academic_composite = academic_metrics.get("overall_composite", 0)
-        quantified.reading_composite = academic_metrics.get("reading", 0)
-        quantified.math_composite = academic_metrics.get("math", 0)
-        quantified.writing_composite = academic_metrics.get("writing", 0)
-        quantified.language_composite = academic_metrics.get("language", 0)
-        
-        # Process behavioral data
-        behavioral_metrics = await self._quantify_behavioral_data(extracted_data)
-        quantified.behavioral_composite = behavioral_metrics.get("composite", 0)
-        quantified.social_emotional_composite = behavioral_metrics.get("social_emotional", 0)
-        quantified.adaptive_composite = behavioral_metrics.get("adaptive", 0)
-        quantified.executive_composite = behavioral_metrics.get("executive", 0)
-        
-        # Calculate growth metrics
-        growth_data = self._calculate_growth_metrics(extracted_data, student_info)
-        quantified.growth_rate = growth_data
-        quantified.progress_indicators = self._generate_progress_indicators(growth_data)
-        
-        # Generate learning profile
-        learning_profile = self._generate_learning_profile(
-            cognitive_metrics, academic_metrics, behavioral_metrics
-        )
-        quantified.learning_style_profile = learning_profile.get("style", {})
-        quantified.cognitive_processing_profile = learning_profile.get("processing", {})
-        
-        # Generate standardized PLOP
-        quantified.standardized_plop = self._generate_standardized_plop(
-            cognitive_metrics, academic_metrics, behavioral_metrics, student_info
-        )
-        
-        # Identify priorities
-        priorities = self._identify_priorities(
-            cognitive_metrics, academic_metrics, behavioral_metrics, growth_data
-        )
-        quantified.priority_goals = priorities.get("goals", [])
-        quantified.service_recommendations = priorities.get("services", [])
-        quantified.accommodation_recommendations = priorities.get("accommodations", [])
-        
-        # Determine eligibility
-        eligibility = self._determine_eligibility(
-            cognitive_metrics, academic_metrics, behavioral_metrics
-        )
-        quantified.eligibility_category = eligibility.get("category")
-        quantified.primary_disability = eligibility.get("primary")
-        quantified.secondary_disabilities = eligibility.get("secondary", [])
-        
-        # Track source data
-        quantified.source_documents = [data.document_id for data in extracted_data]
-        quantified.confidence_metrics = self._calculate_confidence_metrics(extracted_data)
-        
-        return quantified
-    
-    async def _quantify_cognitive_data(
-        self,
-        extracted_data: List[ExtractedDataDTO]
-    ) -> Dict[str, Any]:
-        """Quantify cognitive assessment data"""
-        
-        cognitive_scores = {}
-        
-        # Collect all cognitive scores
         for data in extracted_data:
-            for score in data.cognitive_scores:
-                if score.test_name in ["WISC-V", "DAS-II", "KABC-II"]:
-                    if score.subtest_name not in cognitive_scores:
-                        cognitive_scores[score.subtest_name] = []
-                    cognitive_scores[score.subtest_name].append(score)
+            if hasattr(data, 'cognitive_scores') and data.cognitive_scores:
+                all_scores.extend(data.cognitive_scores)
+            
+            if hasattr(data, 'present_levels') and data.present_levels:
+                # Extract observations from present levels
+                observations = self._extract_observations_from_present_levels(data.present_levels)
+                all_observations.extend(observations)
         
-        # Calculate index scores
-        indices = {}
-        index_mappings = {
-            "FSIQ": ["Full Scale IQ", "General Conceptual Ability"],
-            "VCI": ["Verbal Comprehension Index", "Verbal", "VCI"],
-            "VSI": ["Visual Spatial Index", "Spatial", "VSI"],
-            "FRI": ["Fluid Reasoning Index", "Nonverbal Reasoning", "FRI"],
-            "WMI": ["Working Memory Index", "Working Memory", "WMI"],
-            "PSI": ["Processing Speed Index", "Processing Speed", "PSI"]
-        }
+        logger.info(f"Processing {len(all_scores)} scores and {len(all_observations)} observations")
         
-        for index_code, possible_names in index_mappings.items():
-            for name in possible_names:
-                if name in cognitive_scores:
-                    scores = [s.standard_score for s in cognitive_scores[name] if s.standard_score]
-                    if scores:
-                        indices[index_code] = statistics.mean(scores)
-                        break
+        # Calculate academic metrics
+        quantified_metrics["academic_metrics"] = await self._calculate_academic_metrics(
+            all_scores, student_info
+        )
         
-        # Calculate composite scores
-        composite = 0
-        if indices:
-            # Use FSIQ if available, otherwise average of indices
-            if "FSIQ" in indices:
-                composite = indices["FSIQ"]
-            else:
-                composite = statistics.mean(indices.values())
+        # Calculate behavioral metrics
+        quantified_metrics["behavioral_metrics"] = await self._generate_behavioral_frequencies(
+            all_observations, student_info
+        )
         
-        # Normalize to 0-100 scale
-        normalized_composite = self._normalize_standard_score(composite)
+        # Convert to grade equivalents
+        quantified_metrics["grade_level_performance"] = await self._convert_to_grade_equivalents(
+            all_scores, student_info.get("age", 10)
+        )
         
-        # Generate processing profile
-        profile = self._generate_cognitive_profile(indices, cognitive_scores)
+        # Identify strengths and needs
+        quantified_metrics["strengths_and_needs"] = await self._identify_strengths_and_needs(
+            quantified_metrics["academic_metrics"], 
+            quantified_metrics["behavioral_metrics"]
+        )
         
-        return {
-            "composite": normalized_composite,
-            "indices": indices,
-            "profile": profile,
-            "strengths": self._identify_cognitive_strengths(indices),
-            "weaknesses": self._identify_cognitive_weaknesses(indices)
-        }
+        # Calculate composite profiles
+        quantified_metrics["composite_profiles"] = await self._calculate_composite_profiles(
+            quantified_metrics
+        )
+        
+        # Calculate overall confidence
+        quantified_metrics["overall_confidence"] = self._calculate_overall_confidence(
+            extracted_data, quantified_metrics
+        )
+        
+        # Convert to DTO
+        return self._convert_to_quantified_dto(quantified_metrics)
     
-    async def _quantify_academic_data(
-        self,
-        extracted_data: List[ExtractedDataDTO],
+    async def _calculate_academic_metrics(
+        self, 
+        scores: List[PsychoedScoreDTO], 
         student_info: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Quantify academic achievement data"""
+        """Calculate academic domain metrics"""
         
-        academic_scores = {
-            "reading": {},
-            "mathematics": {},
-            "written_language": {},
-            "oral_language": {}
-        }
-        
-        # Collect academic scores by domain
-        for data in extracted_data:
-            for score in data.academic_scores:
-                domain = self._classify_academic_domain(score.subtest_name)
-                if domain:
-                    subskill = self._classify_academic_subskill(score.subtest_name, domain)
-                    if subskill not in academic_scores[domain]:
-                        academic_scores[domain][subskill] = []
-                    academic_scores[domain][subskill].append(score)
-        
-        # Calculate domain composites
-        domain_composites = {}
-        for domain, subskills in academic_scores.items():
-            if subskills:
-                domain_scores = []
-                for subskill, scores in subskills.items():
-                    subskill_scores = [s.standard_score for s in scores if s.standard_score]
-                    if subskill_scores:
-                        domain_scores.append(statistics.mean(subskill_scores))
-                
-                if domain_scores:
-                    domain_composite = statistics.mean(domain_scores)
-                    domain_composites[domain] = self._normalize_standard_score(domain_composite)
-        
-        # Calculate overall academic composite
-        overall_composite = statistics.mean(domain_composites.values()) if domain_composites else 0
-        
-        # Calculate grade-level performance
-        grade_levels = self._calculate_grade_levels(academic_scores, student_info)
-        
-        return {
-            "overall_composite": overall_composite,
-            **domain_composites,
-            "grade_levels": grade_levels,
-            "skill_profiles": self._generate_skill_profiles(academic_scores),
-            "error_patterns": self._analyze_error_patterns(extracted_data)
-        }
+        return await self.academic_quantifier.calculate_all_domains(scores, student_info)
     
-    async def _quantify_behavioral_data(
-        self,
-        extracted_data: List[ExtractedDataDTO]
-    ) -> Dict[str, Any]:
-        """Quantify behavioral assessment data"""
-        
-        behavioral_scores = {
-            "externalizing": [],
-            "internalizing": [],
-            "attention": [],
-            "executive": [],
-            "adaptive": [],
-            "social": []
-        }
-        
-        # Collect behavioral ratings
-        for data in extracted_data:
-            for category, rating in data.behavioral_ratings.items():
-                category_lower = category.lower()
-                if "external" in category_lower:
-                    behavioral_scores["externalizing"].append(rating)
-                elif "internal" in category_lower:
-                    behavioral_scores["internalizing"].append(rating)
-                elif "attention" in category_lower or "adhd" in category_lower:
-                    behavioral_scores["attention"].append(rating)
-                elif "executive" in category_lower or "brief" in category_lower:
-                    behavioral_scores["executive"].append(rating)
-                elif "adaptive" in category_lower:
-                    behavioral_scores["adaptive"].append(rating)
-                elif "social" in category_lower:
-                    behavioral_scores["social"].append(rating)
-        
-        # Calculate composites (convert T-scores to normalized)
-        composites = {}
-        for domain, scores in behavioral_scores.items():
-            if scores:
-                # T-scores have mean=50, SD=10
-                mean_t_score = statistics.mean(scores)
-                # Convert to standard score equivalent
-                standard_equivalent = self.score_conversions["t_to_standard"](mean_t_score)
-                composites[domain] = self._normalize_standard_score(standard_equivalent)
-        
-        # Calculate behavioral matrices
-        behavior_matrices = self._generate_behavior_matrices(extracted_data)
-        
-        return {
-            "composite": statistics.mean([composites.get("externalizing", 50), 
-                                        composites.get("internalizing", 50)]),
-            "social_emotional": statistics.mean([composites.get("social", 50),
-                                               composites.get("internalizing", 50)]),
-            "adaptive": composites.get("adaptive", 50),
-            "executive": composites.get("executive", 50),
-            "behavior_matrices": behavior_matrices,
-            "intervention_effectiveness": self._analyze_intervention_effectiveness(extracted_data)
-        }
-    
-    def _normalize_standard_score(self, standard_score: float) -> float:
-        """Normalize standard score (M=100, SD=15) to 0-100 scale"""
-        
-        if not standard_score:
-            return 0
-        
-        # Cap at reasonable range (55-145)
-        standard_score = max(55, min(145, standard_score))
-        
-        # Linear transformation: 55->0, 100->50, 145->100
-        normalized = (standard_score - 55) * (100 / 90)
-        
-        return max(0, min(100, normalized))
-    
-    def _percentile_to_standard_score(self, percentile: float) -> float:
-        """Convert percentile to standard score using normal distribution"""
-        
-        # Simplified conversion table
-        conversion_table = {
-            1: 65, 2: 70, 5: 75, 9: 80, 16: 85,
-            25: 90, 37: 95, 50: 100, 63: 105, 75: 110,
-            84: 115, 91: 120, 95: 125, 98: 130, 99: 135
-        }
-        
-        # Find closest percentile
-        closest = min(conversion_table.keys(), key=lambda x: abs(x - percentile))
-        return conversion_table[closest]
-    
-    def _standard_score_to_percentile(self, standard_score: float) -> float:
-        """Convert standard score to percentile"""
-        
-        # Inverse of above
-        conversion_table = {
-            65: 1, 70: 2, 75: 5, 80: 9, 85: 16,
-            90: 25, 95: 37, 100: 50, 105: 63, 110: 75,
-            115: 84, 120: 91, 125: 95, 130: 98, 135: 99
-        }
-        
-        # Round to nearest 5
-        rounded = round(standard_score / 5) * 5
-        return conversion_table.get(rounded, 50)
-    
-    def _generate_cognitive_profile(
-        self,
-        indices: Dict[str, float],
-        all_scores: Dict[str, List[PsychoedScoreDTO]]
-    ) -> Dict[str, Any]:
-        """Generate detailed cognitive processing profile"""
-        
-        profile = {
-            "primary_style": "balanced",  # Will be updated
-            "processing_strengths": [],
-            "processing_weaknesses": [],
-            "learning_implications": []
-        }
-        
-        # Determine processing style
-        if indices:
-            vci = indices.get("VCI", 100)
-            vsi = indices.get("VSI", 100)
-            
-            if vci > vsi + 15:
-                profile["primary_style"] = "verbal"
-                profile["learning_implications"].append("Benefits from verbal instruction")
-            elif vsi > vci + 15:
-                profile["primary_style"] = "visual"
-                profile["learning_implications"].append("Benefits from visual supports")
-            
-            # Check processing speed
-            psi = indices.get("PSI", 100)
-            if psi < 85:
-                profile["processing_weaknesses"].append("Processing speed")
-                profile["learning_implications"].append("Requires extended time")
-            elif psi > 115:
-                profile["processing_strengths"].append("Processing speed")
-            
-            # Check working memory
-            wmi = indices.get("WMI", 100)
-            if wmi < 85:
-                profile["processing_weaknesses"].append("Working memory")
-                profile["learning_implications"].append("Benefits from chunking and repetition")
-            elif wmi > 115:
-                profile["processing_strengths"].append("Working memory")
-        
-        return profile
-    
-    def _classify_academic_domain(self, subtest_name: str) -> Optional[str]:
-        """Classify subtest into academic domain"""
-        
-        subtest_lower = subtest_name.lower()
-        
-        # Reading indicators
-        if any(term in subtest_lower for term in ["read", "decod", "comprehen", "fluency"]):
-            return "reading"
-        
-        # Math indicators
-        if any(term in subtest_lower for term in ["math", "numer", "calculation", "problem"]):
-            return "mathematics"
-        
-        # Writing indicators
-        if any(term in subtest_lower for term in ["writ", "spell", "composition"]):
-            return "written_language"
-        
-        # Oral language indicators
-        if any(term in subtest_lower for term in ["oral", "listen", "speak", "language"]):
-            return "oral_language"
-        
-        return None
-    
-    def _classify_academic_subskill(self, subtest_name: str, domain: str) -> str:
-        """Classify subtest into specific subskill"""
-        
-        subtest_lower = subtest_name.lower()
-        
-        if domain == "reading":
-            if "decod" in subtest_lower or "word" in subtest_lower:
-                return "decoding"
-            elif "comprehen" in subtest_lower:
-                return "comprehension"
-            elif "fluency" in subtest_lower:
-                return "fluency"
-            else:
-                return "general"
-        
-        elif domain == "mathematics":
-            if "calculation" in subtest_lower or "computation" in subtest_lower:
-                return "computation"
-            elif "problem" in subtest_lower or "reasoning" in subtest_lower:
-                return "problem_solving"
-            elif "fluency" in subtest_lower:
-                return "fluency"
-            else:
-                return "general"
-        
-        return "general"
-    
-    def _calculate_grade_levels(
-        self,
-        academic_scores: Dict[str, Dict[str, List[PsychoedScoreDTO]]],
+    async def _generate_behavioral_frequencies(
+        self, 
+        observations: List[str], 
         student_info: Dict[str, Any]
-    ) -> Dict[str, float]:
-        """Calculate grade-level equivalents"""
+    ) -> Dict[str, Any]:
+        """Generate behavioral frequency matrices"""
         
-        grade_levels = {}
-        current_grade = float(student_info.get("grade", 5))  # Default to 5th grade
-        
-        for domain, subskills in academic_scores.items():
-            domain_scores = []
-            
-            for subskill, scores in subskills.items():
-                # Look for grade equivalents first
-                for score in scores:
-                    if score.grade_equivalent:
-                        try:
-                            # Parse grade equivalent (e.g., "3.5" or "3:5")
-                            grade_str = score.grade_equivalent.replace(":", ".")
-                            grade_float = float(grade_str)
-                            domain_scores.append(grade_float)
-                        except:
-                            pass
-                
-                # If no grade equivalents, estimate from standard scores
-                if not domain_scores:
-                    standard_scores = [s.standard_score for s in scores if s.standard_score]
-                    if standard_scores:
-                        avg_standard = statistics.mean(standard_scores)
-                        # Rough conversion: each 15 points ≈ 1 grade level
-                        grade_diff = (avg_standard - 100) / 15
-                        estimated_grade = current_grade + grade_diff
-                        domain_scores.append(max(0, estimated_grade))
-            
-            if domain_scores:
-                grade_levels[domain] = statistics.mean(domain_scores)
-        
-        return grade_levels
+        return await self.behavioral_quantifier.generate_frequency_matrices(observations, student_info)
     
-    def _generate_skill_profiles(
-        self,
-        academic_scores: Dict[str, Dict[str, List[PsychoedScoreDTO]]]
-    ) -> Dict[str, Dict[str, Any]]:
-        """Generate detailed skill profiles for each domain"""
+    async def _convert_to_grade_equivalents(
+        self, 
+        scores: List[PsychoedScoreDTO], 
+        student_age: int
+    ) -> Dict[str, Any]:
+        """Convert standard scores to grade equivalents"""
         
-        profiles = {}
-        
-        for domain, subskills in academic_scores.items():
-            domain_profile = {
-                "strengths": [],
-                "weaknesses": [],
-                "instructional_level": None
-            }
-            
-            # Calculate subskill averages
-            subskill_avgs = {}
-            for subskill, scores in subskills.items():
-                standard_scores = [s.standard_score for s in scores if s.standard_score]
-                if standard_scores:
-                    subskill_avgs[subskill] = statistics.mean(standard_scores)
-            
-            if subskill_avgs:
-                # Determine strengths/weaknesses
-                domain_mean = statistics.mean(subskill_avgs.values())
-                
-                for subskill, avg in subskill_avgs.items():
-                    if avg > domain_mean + 10:
-                        domain_profile["strengths"].append(subskill)
-                    elif avg < domain_mean - 10:
-                        domain_profile["weaknesses"].append(subskill)
-                
-                # Determine instructional level
-                if domain_mean >= 90:
-                    domain_profile["instructional_level"] = "grade_level"
-                elif domain_mean >= 80:
-                    domain_profile["instructional_level"] = "approaching_grade_level"
-                else:
-                    domain_profile["instructional_level"] = "below_grade_level"
-            
-            profiles[domain] = domain_profile
-        
-        return profiles
+        return self.normative_data.convert_to_grade_equivalents(scores, student_age, self.conversion_tables)
     
-    def _calculate_growth_metrics(
-        self,
-        extracted_data: List[ExtractedDataDTO],
-        student_info: Dict[str, Any]
-    ) -> Dict[str, float]:
-        """Calculate growth rates from progress monitoring data"""
-        
-        # This would analyze progress monitoring graphs and CBM data
-        # For now, return placeholder data
-        return {
-            "reading": 1.2,  # 1.2 grade levels per year
-            "mathematics": 0.9,
-            "writing": 0.8,
-            "overall": 0.97
-        }
-    
-    def _generate_progress_indicators(
-        self,
-        growth_data: Dict[str, float]
-    ) -> List[Dict[str, Any]]:
-        """Generate progress indicators from growth data"""
-        
-        indicators = []
-        
-        for domain, growth_rate in growth_data.items():
-            if domain == "overall":
-                continue
-            
-            indicator = {
-                "domain": domain,
-                "growth_rate": growth_rate,
-                "trend": "increasing" if growth_rate > 1.0 else "stable" if growth_rate > 0.8 else "concerning",
-                "projection": f"{growth_rate:.1f} grade levels per year"
-            }
-            indicators.append(indicator)
-        
-        return indicators
-    
-    def _generate_learning_profile(
-        self,
-        cognitive_metrics: Dict[str, Any],
+    async def _identify_strengths_and_needs(
+        self, 
         academic_metrics: Dict[str, Any],
         behavioral_metrics: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Generate comprehensive learning profile"""
-        
-        profile = {
-            "style": {
-                "primary_modality": cognitive_metrics.get("profile", {}).get("primary_style", "balanced"),
-                "optimal_conditions": [],
-                "barriers": []
-            },
-            "processing": cognitive_metrics.get("profile", {})
-        }
-        
-        # Determine optimal conditions
-        if behavioral_metrics.get("attention", 0) < 40:
-            profile["style"]["optimal_conditions"].extend([
-                "Minimal distractions",
-                "Structured environment",
-                "Frequent breaks"
-            ])
-        
-        if cognitive_metrics.get("profile", {}).get("processing_weaknesses"):
-            if "Processing speed" in cognitive_metrics["profile"]["processing_weaknesses"]:
-                profile["style"]["optimal_conditions"].append("Extended time")
-            if "Working memory" in cognitive_metrics["profile"]["processing_weaknesses"]:
-                profile["style"]["optimal_conditions"].append("Written instructions")
-        
-        # Identify barriers
-        if academic_metrics.get("reading", 0) < 30:
-            profile["style"]["barriers"].append("Reading difficulties")
-        
-        if behavioral_metrics.get("executive", 0) < 40:
-            profile["style"]["barriers"].append("Executive function challenges")
-        
-        return profile
-    
-    def _generate_standardized_plop(
-        self,
-        cognitive_metrics: Dict[str, Any],
-        academic_metrics: Dict[str, Any],
-        behavioral_metrics: Dict[str, Any],
-        student_info: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Generate standardized present levels for RAG"""
-        
-        plop = {
-            "academic_performance": {
-                "reading": {
-                    "current_level": academic_metrics.get("grade_levels", {}).get("reading", 0),
-                    "strengths": academic_metrics.get("skill_profiles", {}).get("reading", {}).get("strengths", []),
-                    "needs": academic_metrics.get("skill_profiles", {}).get("reading", {}).get("weaknesses", []),
-                    "growth_rate": academic_metrics.get("grade_levels", {}).get("reading", 0)
-                },
-                "mathematics": {
-                    "current_level": academic_metrics.get("grade_levels", {}).get("mathematics", 0),
-                    "strengths": academic_metrics.get("skill_profiles", {}).get("mathematics", {}).get("strengths", []),
-                    "needs": academic_metrics.get("skill_profiles", {}).get("mathematics", {}).get("weaknesses", []),
-                    "growth_rate": academic_metrics.get("grade_levels", {}).get("mathematics", 0)
-                },
-                "written_language": {
-                    "current_level": academic_metrics.get("grade_levels", {}).get("written_language", 0),
-                    "strengths": academic_metrics.get("skill_profiles", {}).get("written_language", {}).get("strengths", []),
-                    "needs": academic_metrics.get("skill_profiles", {}).get("written_language", {}).get("weaknesses", []),
-                    "growth_rate": academic_metrics.get("grade_levels", {}).get("written_language", 0)
-                }
-            },
-            "cognitive_functioning": {
-                "overall_ability": cognitive_metrics.get("composite", 0),
-                "processing_strengths": cognitive_metrics.get("strengths", []),
-                "processing_weaknesses": cognitive_metrics.get("weaknesses", []),
-                "learning_style": cognitive_metrics.get("profile", {}).get("primary_style", "balanced")
-            },
-            "behavioral_functioning": {
-                "attention_focus": behavioral_metrics.get("matrices", {}).get("attention", {}),
-                "social_emotional": behavioral_metrics.get("social_emotional", 0),
-                "executive_function": behavioral_metrics.get("executive", 0),
-                "adaptive_skills": behavioral_metrics.get("adaptive", 0)
-            },
-            "functional_performance": {
-                "classroom_participation": "Requires support",  # Would be derived
-                "peer_interactions": "Age-appropriate with support",  # Would be derived
-                "task_completion": "Variable based on structure",  # Would be derived
-                "independence_level": "Moderate support needed"  # Would be derived
-            }
-        }
-        
-        return plop
-    
-    def _identify_priorities(
-        self,
-        cognitive_metrics: Dict[str, Any],
-        academic_metrics: Dict[str, Any],
-        behavioral_metrics: Dict[str, Any],
-        growth_data: Dict[str, float]
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Identify priority goals and services"""
-        
-        priorities = {
-            "goals": [],
-            "services": [],
-            "accommodations": []
-        }
-        
-        # Academic priorities
-        for domain in ["reading", "mathematics", "written_language"]:
-            if academic_metrics.get(domain, 100) < 40:  # Below 40th percentile
-                priority = {
-                    "area": domain,
-                    "current_performance": academic_metrics.get(domain, 0),
-                    "priority_level": "high" if academic_metrics.get(domain, 100) < 25 else "medium",
-                    "recommended_focus": academic_metrics.get("skill_profiles", {}).get(domain, {}).get("weaknesses", [])
-                }
-                priorities["goals"].append(priority)
-                
-                # Recommend services
-                if priority["priority_level"] == "high":
-                    priorities["services"].append({
-                        "type": f"specialized_{domain}_instruction",
-                        "frequency": "daily",
-                        "duration": "30-45 minutes",
-                        "setting": "small_group"
-                    })
-        
-        # Behavioral priorities
-        if behavioral_metrics.get("attention", 100) < 40:
-            priorities["goals"].append({
-                "area": "attention_focus",
-                "current_performance": behavioral_metrics.get("attention", 0),
-                "priority_level": "high",
-                "recommended_focus": ["sustained_attention", "task_completion"]
-            })
-            
-            priorities["accommodations"].extend([
-                "Preferential seating",
-                "Movement breaks",
-                "Reduced distractions"
-            ])
-        
-        # Cognitive accommodations
-        if "Processing speed" in cognitive_metrics.get("weaknesses", []):
-            priorities["accommodations"].append("Extended time (1.5x)")
-        
-        if "Working memory" in cognitive_metrics.get("weaknesses", []):
-            priorities["accommodations"].extend([
-                "Written instructions",
-                "Access to notes",
-                "Chunked assignments"
-            ])
-        
-        return priorities
-    
-    def _determine_eligibility(
-        self,
-        cognitive_metrics: Dict[str, Any],
-        academic_metrics: Dict[str, Any],
-        behavioral_metrics: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Determine special education eligibility"""
-        
-        eligibility = {
-            "category": None,
-            "primary": None,
-            "secondary": []
-        }
-        
-        # Check for Specific Learning Disability
-        cognitive_composite = cognitive_metrics.get("composite", 50)
-        if cognitive_composite > 30:  # IQ > 85 approximately
-            # Check for significant academic deficits
-            academic_areas = ["reading", "mathematics", "written_language"]
-            deficits = []
-            
-            for area in academic_areas:
-                if academic_metrics.get(area, 100) < 30:  # Below 30th percentile
-                    deficits.append(area)
-            
-            if deficits:
-                eligibility["category"] = "Specific Learning Disability"
-                eligibility["primary"] = f"SLD in {deficits[0]}"
-                if len(deficits) > 1:
-                    eligibility["secondary"] = [f"SLD in {area}" for area in deficits[1:]]
-        
-        # Check for Other Health Impairment (ADHD)
-        if behavioral_metrics.get("attention", 100) < 25:
-            if not eligibility["primary"]:
-                eligibility["category"] = "Other Health Impairment"
-                eligibility["primary"] = "ADHD"
-            else:
-                eligibility["secondary"].append("ADHD characteristics")
-        
-        # Check for Intellectual Disability
-        if cognitive_composite < 30:  # IQ < 85 approximately
-            eligibility["category"] = "Intellectual Disability"
-            eligibility["primary"] = "Mild Intellectual Disability"
-        
-        return eligibility
-    
-    def _identify_cognitive_strengths(self, indices: Dict[str, float]) -> List[str]:
-        """Identify cognitive strengths from index scores"""
+        """Identify student strengths and needs using statistical analysis"""
         
         strengths = []
+        needs = []
         
-        if not indices:
-            return strengths
-        
-        # Calculate mean
-        mean_index = statistics.mean(indices.values())
-        
-        # Identify relative strengths (>1 SD above mean)
-        for index_name, score in indices.items():
-            if score > mean_index + 15:
-                readable_name = {
-                    "VCI": "Verbal Comprehension",
-                    "VSI": "Visual Spatial Processing",
-                    "FRI": "Fluid Reasoning",
-                    "WMI": "Working Memory",
-                    "PSI": "Processing Speed"
-                }.get(index_name, index_name)
+        # Academic strengths and needs
+        for domain, metrics in academic_metrics.items():
+            if isinstance(metrics, dict) and "overall_rating" in metrics:
+                rating = metrics["overall_rating"]
                 
-                strengths.append(f"{readable_name} ({int(score)})")
+                if rating >= 4.0:  # Strong performance
+                    strengths.append({
+                        "domain": domain,
+                        "type": "academic",
+                        "description": f"Strong performance in {domain}",
+                        "rating": rating,
+                        "evidence": metrics.get("evidence", [])
+                    })
+                elif rating <= 2.0:  # Area of need
+                    needs.append({
+                        "domain": domain,
+                        "type": "academic", 
+                        "description": f"Area of need in {domain}",
+                        "rating": rating,
+                        "evidence": metrics.get("evidence", []),
+                        "priority": "high" if rating <= 1.5 else "medium"
+                    })
         
-        # Also check for normative strengths (>115)
-        for index_name, score in indices.items():
-            if score > 115 and f"{index_name} ({int(score)})" not in strengths:
-                readable_name = {
-                    "VCI": "Verbal Comprehension",
-                    "VSI": "Visual Spatial Processing",
-                    "FRI": "Fluid Reasoning",
-                    "WMI": "Working Memory",
-                    "PSI": "Processing Speed"
-                }.get(index_name, index_name)
+        # Behavioral strengths and needs
+        for domain, metrics in behavioral_metrics.items():
+            if isinstance(metrics, dict) and "frequency_rating" in metrics:
+                rating = metrics["frequency_rating"]
                 
-                strengths.append(f"{readable_name} (Above Average)")
+                # For behavioral metrics, lower frequency of problems = strength
+                if rating <= 2.0:  # Low frequency of problems
+                    strengths.append({
+                        "domain": domain,
+                        "type": "behavioral",
+                        "description": f"Appropriate behavior in {domain}",
+                        "rating": 5.0 - rating,  # Invert for strength
+                        "evidence": metrics.get("observations", [])
+                    })
+                elif rating >= 4.0:  # High frequency of problems
+                    needs.append({
+                        "domain": domain,
+                        "type": "behavioral",
+                        "description": f"Behavioral support needed in {domain}",
+                        "rating": rating,
+                        "evidence": metrics.get("observations", []),
+                        "priority": "high" if rating >= 4.5 else "medium"
+                    })
         
-        return strengths
+        return {
+            "strengths": sorted(strengths, key=lambda x: x["rating"], reverse=True),
+            "needs": sorted(needs, key=lambda x: x.get("priority", "medium") == "high", reverse=True),
+            "strengths_count": len(strengths),
+            "needs_count": len(needs),
+            "overall_profile": self._determine_overall_profile(strengths, needs)
+        }
     
-    def _identify_cognitive_weaknesses(self, indices: Dict[str, float]) -> List[str]:
-        """Identify cognitive weaknesses from index scores"""
+    async def _calculate_composite_profiles(self, all_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate composite performance profiles"""
         
-        weaknesses = []
+        academic_metrics = all_metrics.get("academic_metrics", {})
+        behavioral_metrics = all_metrics.get("behavioral_metrics", {})
         
-        if not indices:
-            return weaknesses
+        # Calculate overall academic composite
+        academic_ratings = []
+        for domain, metrics in academic_metrics.items():
+            if isinstance(metrics, dict) and "overall_rating" in metrics:
+                academic_ratings.append(metrics["overall_rating"])
         
-        # Calculate mean
-        mean_index = statistics.mean(indices.values())
+        academic_composite = np.mean(academic_ratings) if academic_ratings else 2.5
         
-        # Identify relative weaknesses (>1 SD below mean)
-        for index_name, score in indices.items():
-            if score < mean_index - 15:
-                readable_name = {
-                    "VCI": "Verbal Comprehension",
-                    "VSI": "Visual Spatial Processing",
-                    "FRI": "Fluid Reasoning",
-                    "WMI": "Working Memory",
-                    "PSI": "Processing Speed"
-                }.get(index_name, index_name)
-                
-                weaknesses.append(f"{readable_name} ({int(score)})")
+        # Calculate overall behavioral composite
+        behavioral_ratings = []
+        for domain, metrics in behavioral_metrics.items():
+            if isinstance(metrics, dict) and "frequency_rating" in metrics:
+                # Invert behavioral ratings (lower frequency = better)
+                behavioral_ratings.append(5.0 - metrics["frequency_rating"])
         
-        # Also check for normative weaknesses (<85)
-        for index_name, score in indices.items():
-            if score < 85 and f"{index_name} ({int(score)})" not in weaknesses:
-                readable_name = {
-                    "VCI": "Verbal Comprehension",
-                    "VSI": "Visual Spatial Processing",
-                    "FRI": "Fluid Reasoning",
-                    "WMI": "Working Memory",
-                    "PSI": "Processing Speed"
-                }.get(index_name, index_name)
-                
-                weaknesses.append(f"{readable_name} (Below Average)")
+        behavioral_composite = np.mean(behavioral_ratings) if behavioral_ratings else 2.5
         
-        return weaknesses
+        # Calculate discrepancy scores
+        academic_discrepancy = max(academic_ratings) - min(academic_ratings) if len(academic_ratings) > 1 else 0
+        
+        return {
+            "academic_composite": academic_composite,
+            "behavioral_composite": behavioral_composite,
+            "overall_composite": (academic_composite + behavioral_composite) / 2,
+            "academic_discrepancy": academic_discrepancy,
+            "profile_consistency": "consistent" if academic_discrepancy < 1.0 else "variable",
+            "dominant_pattern": self._identify_dominant_pattern(academic_metrics, behavioral_metrics),
+            "intervention_focus": self._recommend_intervention_focus(academic_composite, behavioral_composite)
+        }
     
-    def _generate_behavior_matrices(
-        self,
-        extracted_data: List[ExtractedDataDTO]
-    ) -> Dict[str, BehaviorFrequencyMatrix]:
-        """Generate behavior frequency matrices"""
+    def _determine_overall_profile(self, strengths: List[Dict], needs: List[Dict]) -> str:
+        """Determine overall student profile"""
         
-        matrices = {}
+        if len(strengths) > len(needs) * 1.5:
+            return "strength-based"
+        elif len(needs) > len(strengths) * 1.5:
+            return "high-needs"
+        else:
+            return "mixed-profile"
+    
+    def _identify_dominant_pattern(self, academic_metrics: Dict, behavioral_metrics: Dict) -> str:
+        """Identify the dominant pattern in student performance"""
         
-        # Placeholder implementation - would parse behavioral observations
-        # and functional behavior assessment data
+        academic_avg = np.mean([m.get("overall_rating", 2.5) for m in academic_metrics.values() if isinstance(m, dict)])
+        behavioral_avg = np.mean([5.0 - m.get("frequency_rating", 2.5) for m in behavioral_metrics.values() if isinstance(m, dict)])
         
-        # Example attention matrix
-        matrices["attention"] = BehaviorFrequencyMatrix(
-            behavior_category="sustained_attention",
-            frequency_per_hour=3.5,  # Off-task 3.5 times per hour
-            duration_minutes=5,  # Average 5 minutes per episode
-            intensity_scale=3,  # Moderate intensity
-            setting="classroom",
-            antecedents=["difficult_tasks", "lengthy_assignments"],
-            consequences=["teacher_redirection", "incomplete_work"],
-            success_rate=0.6  # 60% success with interventions
+        if academic_avg > behavioral_avg + 0.5:
+            return "academic-strength"
+        elif behavioral_avg > academic_avg + 0.5:
+            return "behavioral-strength"
+        else:
+            return "balanced"
+    
+    def _recommend_intervention_focus(self, academic_composite: float, behavioral_composite: float) -> str:
+        """Recommend primary intervention focus"""
+        
+        if academic_composite < 2.0 and behavioral_composite >= 3.0:
+            return "academic-intensive"
+        elif behavioral_composite < 2.0 and academic_composite >= 3.0:
+            return "behavioral-intensive"
+        elif academic_composite < 2.5 and behavioral_composite < 2.5:
+            return "comprehensive"
+        else:
+            return "targeted-support"
+    
+    def _extract_observations_from_present_levels(self, present_levels: Dict) -> List[str]:
+        """Extract behavioral observations from present levels data"""
+        
+        observations = []
+        
+        # Extract from behavioral data
+        behavioral_data = present_levels.get("behavioral", {})
+        if isinstance(behavioral_data, dict):
+            for key, value in behavioral_data.items():
+                if isinstance(value, str):
+                    observations.append(value)
+                elif isinstance(value, list):
+                    observations.extend([str(item) for item in value])
+        
+        return observations
+    
+    def _calculate_overall_confidence(
+        self, 
+        extracted_data: List[ExtractedDataDTO], 
+        quantified_metrics: Dict
+    ) -> float:
+        """Calculate overall confidence in quantification"""
+        
+        confidences = []
+        
+        # Extract Document AI confidences
+        for data in extracted_data:
+            if hasattr(data, 'extraction_confidence') and data.extraction_confidence:
+                confidences.append(data.extraction_confidence)
+        
+        # Add quantification-specific confidence factors
+        academic_count = len(quantified_metrics.get("academic_metrics", {}))
+        behavioral_count = len(quantified_metrics.get("behavioral_metrics", {}))
+        
+        # Confidence based on data completeness
+        completeness_confidence = min((academic_count + behavioral_count) / 8, 1.0)  # Expect ~8 domains
+        confidences.append(completeness_confidence)
+        
+        if confidences:
+            return np.mean(confidences)
+        else:
+            return 0.75  # Default moderate confidence
+    
+    def _convert_to_quantified_dto(self, metrics: Dict[str, Any]) -> QuantifiedMetricsDTO:
+        """Convert quantified metrics to DTO format"""
+        
+        return QuantifiedMetricsDTO(
+            student_id=metrics["student_id"],
+            quantification_date=metrics["quantification_date"],
+            academic_metrics=metrics["academic_metrics"],
+            behavioral_metrics=metrics["behavioral_metrics"],
+            grade_level_performance=metrics["grade_level_performance"],
+            strengths=metrics["strengths_and_needs"]["strengths"],
+            needs=metrics["strengths_and_needs"]["needs"],
+            composite_profiles=metrics["composite_profiles"],
+            overall_confidence=metrics.get("overall_confidence", 0.75),
+            plop_ready=True
         )
-        
-        return matrices
     
-    def _analyze_error_patterns(
-        self,
-        extracted_data: List[ExtractedDataDTO]
-    ) -> Dict[str, List[str]]:
-        """Analyze error patterns from assessments"""
-        
-        # Placeholder - would analyze actual error data
-        return {
-            "reading": ["phoneme_substitution", "sight_word_confusion"],
-            "mathematics": ["regrouping_errors", "word_problem_comprehension"],
-            "writing": ["capitalization", "sentence_fragments"]
-        }
-    
-    def _analyze_intervention_effectiveness(
-        self,
-        extracted_data: List[ExtractedDataDTO]
-    ) -> Dict[str, float]:
-        """Analyze effectiveness of current interventions"""
-        
-        # Placeholder - would analyze progress monitoring data
-        return {
-            "visual_supports": 0.75,  # 75% effective
-            "break_cards": 0.80,
-            "peer_tutoring": 0.60,
-            "small_group_instruction": 0.85
-        }
-    
-    def _calculate_confidence_metrics(
-        self,
-        extracted_data: List[ExtractedDataDTO]
-    ) -> Dict[str, float]:
-        """Calculate confidence metrics for quantification"""
-        
-        confidence_scores = [data.extraction_confidence for data in extracted_data]
+    def _get_default_grade_norms(self) -> Dict[str, Any]:
+        """Default grade level norms if data file not available"""
         
         return {
-            "extraction_confidence": statistics.mean(confidence_scores) if confidence_scores else 0.76,
-            "data_completeness": sum(data.completeness_score for data in extracted_data) / len(extracted_data) if extracted_data else 0,
-            "source_reliability": 0.90  # Standardized assessments are highly reliable
-        }
-    
-    def _load_grade_norms(self) -> Dict[str, Dict[str, float]]:
-        """Load grade-level norms for score conversion"""
-        
-        # Simplified norms - would load from database
-        return {
-            "reading": {
-                "K": 75, "1": 80, "2": 85, "3": 90,
-                "4": 93, "5": 95, "6": 97, "7": 99,
-                "8": 100, "9": 102, "10": 104, "11": 106, "12": 108
+            "standard_score_means": {
+                "K": 85, "1": 90, "2": 95, "3": 100, "4": 100, 
+                "5": 100, "6": 100, "7": 100, "8": 100, "9": 100,
+                "10": 100, "11": 100, "12": 100
             },
-            "mathematics": {
-                "K": 75, "1": 80, "2": 85, "3": 90,
-                "4": 93, "5": 95, "6": 97, "7": 99,
-                "8": 100, "9": 102, "10": 104, "11": 106, "12": 108
+            "percentile_conversions": {
+                "85": 16, "90": 25, "95": 37, "100": 50, "105": 63,
+                "110": 75, "115": 84, "120": 91, "125": 95
             }
         }
+    
+    def _get_default_conversion_tables(self) -> Dict[str, Any]:
+        """Default conversion tables if data file not available"""
+        
+        return {
+            "standard_to_grade": {
+                "reading": {"70": "K.0", "85": "1.0", "100": "grade_level", "115": "+1.5"},
+                "math": {"70": "K.0", "85": "1.0", "100": "grade_level", "115": "+1.5"},
+                "writing": {"70": "K.0", "85": "1.0", "100": "grade_level", "115": "+1.5"}
+            },
+            "behavioral_frequencies": {
+                "attention": {"1": "excellent", "2": "good", "3": "fair", "4": "concern", "5": "significant"},
+                "social": {"1": "excellent", "2": "good", "3": "fair", "4": "concern", "5": "significant"}
+            }
+        }
+
+
+class AcademicQuantifier:
+    """Handles academic domain quantification"""
+    
+    async def calculate_all_domains(
+        self, 
+        scores: List[PsychoedScoreDTO], 
+        student_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate metrics for all academic domains"""
+        
+        logger.info(f"Calculating academic metrics for {len(scores)} scores")
+        
+        academic_metrics = {}
+        
+        # Group scores by domain
+        domain_scores = self._group_scores_by_domain(scores)
+        
+        # Calculate reading metrics
+        if "reading" in domain_scores:
+            academic_metrics["reading"] = await self.calculate_reading_metrics(
+                domain_scores["reading"], student_info
+            )
+        
+        # Calculate mathematics metrics
+        if "mathematics" in domain_scores:
+            academic_metrics["mathematics"] = await self.calculate_mathematics_metrics(
+                domain_scores["mathematics"], student_info
+            )
+        
+        # Calculate written language metrics
+        if "written_language" in domain_scores:
+            academic_metrics["written_language"] = await self.calculate_written_language_metrics(
+                domain_scores["written_language"], student_info
+            )
+        
+        # Calculate oral language metrics
+        if "oral_language" in domain_scores:
+            academic_metrics["oral_language"] = await self.calculate_oral_language_metrics(
+                domain_scores["oral_language"], student_info
+            )
+        
+        logger.info(f"Calculated metrics for {len(academic_metrics)} academic domains")
+        return academic_metrics
+    
+    def _group_scores_by_domain(self, scores: List[PsychoedScoreDTO]) -> Dict[str, List[PsychoedScoreDTO]]:
+        """Group scores by academic domain"""
+        
+        domain_mappings = {
+            "reading": ["word reading", "reading comprehension", "pseudoword decoding", "reading fluency", "decoding"],
+            "mathematics": ["numerical operations", "math problem solving", "math fluency", "calculation", "applied problems"],
+            "written_language": ["spelling", "sentence composition", "essay composition", "writing fluency", "written expression"],
+            "oral_language": ["listening comprehension", "oral expression", "receptive language", "expressive language"]
+        }
+        
+        domain_scores = {domain: [] for domain in domain_mappings.keys()}
+        
+        for score in scores:
+            subtest_lower = score.subtest_name.lower()
+            
+            # Find matching domain
+            for domain, keywords in domain_mappings.items():
+                if any(keyword in subtest_lower for keyword in keywords):
+                    domain_scores[domain].append(score)
+                    break
+        
+        return {k: v for k, v in domain_scores.items() if v}  # Remove empty domains
+    
+    async def calculate_reading_metrics(
+        self, 
+        reading_scores: List[PsychoedScoreDTO], 
+        student_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate reading domain metrics"""
+        
+        metrics = {
+            "decoding_skills": {},
+            "fluency_metrics": {},
+            "comprehension_scores": {},
+            "phonemic_awareness": {},
+            "overall_rating": 0.0,
+            "evidence": []
+        }
+        
+        # Calculate component scores
+        standard_scores = [s.standard_score for s in reading_scores if s.standard_score]
+        percentiles = [s.percentile_rank for s in reading_scores if s.percentile_rank]
+        
+        if standard_scores:
+            avg_standard = np.mean(standard_scores)
+            
+            # Convert to 1-5 rating scale
+            if avg_standard >= 115:
+                overall_rating = 5.0  # Well above average
+            elif avg_standard >= 105:
+                overall_rating = 4.0  # Above average
+            elif avg_standard >= 85:
+                overall_rating = 3.0  # Average
+            elif avg_standard >= 70:
+                overall_rating = 2.0  # Below average
+            else:
+                overall_rating = 1.0  # Well below average
+            
+            metrics["overall_rating"] = overall_rating
+            metrics["average_standard_score"] = avg_standard
+            
+            # Detailed component analysis
+            metrics["decoding_skills"] = {
+                "accuracy_percentage": min(85 + (avg_standard - 100) * 0.5, 100),
+                "phonics_knowledge": max(1, min(5, 3 + (avg_standard - 100) / 15)),
+                "pattern_recognition": overall_rating
+            }
+            
+            metrics["fluency_metrics"] = {
+                "wcpm_estimate": max(20, 80 + (avg_standard - 100) * 0.8),
+                "accuracy_percentage": min(85 + (avg_standard - 100) * 0.5, 100),
+                "prosody_rating": max(1, min(4, 2 + (avg_standard - 100) / 20))
+            }
+            
+            metrics["comprehension_scores"] = {
+                "passage_comprehension": min(85 + (avg_standard - 100) * 0.5, 100),
+                "vocabulary_score": overall_rating,
+                "reading_level": self._estimate_reading_level(avg_standard, student_info.get("grade", 5))
+            }
+            
+            # Generate evidence statements
+            for score in reading_scores:
+                if score.standard_score:
+                    metrics["evidence"].append(f"{score.subtest_name}: SS={score.standard_score}")
+        
+        return metrics
+    
+    async def calculate_mathematics_metrics(
+        self, 
+        math_scores: List[PsychoedScoreDTO], 
+        student_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate mathematics domain metrics"""
+        
+        metrics = {
+            "computation_skills": {},
+            "problem_solving": {},
+            "number_sense": {},
+            "math_fluency": {},
+            "overall_rating": 0.0,
+            "evidence": []
+        }
+        
+        standard_scores = [s.standard_score for s in math_scores if s.standard_score]
+        
+        if standard_scores:
+            avg_standard = np.mean(standard_scores)
+            overall_rating = self._standard_score_to_rating(avg_standard)
+            
+            metrics["overall_rating"] = overall_rating
+            metrics["average_standard_score"] = avg_standard
+            
+            # Component analysis
+            metrics["computation_skills"] = {
+                "basic_facts_fluency": max(1, min(5, 3 + (avg_standard - 100) / 15)),
+                "multi_step_accuracy": min(85 + (avg_standard - 100) * 0.5, 100),
+                "calculation_speed": overall_rating
+            }
+            
+            metrics["problem_solving"] = {
+                "applied_problems_accuracy": min(75 + (avg_standard - 100) * 0.6, 100),
+                "reasoning_score": overall_rating,
+                "strategy_usage": max(1, min(5, 2 + (avg_standard - 100) / 20))
+            }
+            
+            metrics["number_sense"] = {
+                "number_concepts": overall_rating,
+                "quantity_comparison": min(85 + (avg_standard - 100) * 0.4, 100),
+                "place_value_knowledge": overall_rating
+            }
+            
+            # Generate evidence
+            for score in math_scores:
+                if score.standard_score:
+                    metrics["evidence"].append(f"{score.subtest_name}: SS={score.standard_score}")
+        
+        return metrics
+    
+    async def calculate_written_language_metrics(
+        self, 
+        writing_scores: List[PsychoedScoreDTO], 
+        student_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate written language metrics with 1-5 rating scales"""
+        
+        metrics = {
+            "sentence_structure": {},
+            "organization_coherence": {},
+            "mechanics": {},
+            "writing_fluency": {},
+            "idea_development": {},
+            "overall_rating": 0.0,
+            "evidence": []
+        }
+        
+        standard_scores = [s.standard_score for s in writing_scores if s.standard_score]
+        
+        if standard_scores:
+            avg_standard = np.mean(standard_scores)
+            overall_rating = self._standard_score_to_rating(avg_standard)
+            
+            metrics["overall_rating"] = overall_rating
+            
+            # 1-5 rating scales for each component
+            metrics["sentence_structure"] = {
+                "grammar_accuracy": max(1, min(5, 3 + (avg_standard - 100) / 15)),
+                "sentence_complexity": overall_rating,
+                "syntax_errors": max(1, min(5, 5 - (avg_standard - 70) / 15))  # Lower is better
+            }
+            
+            metrics["organization_coherence"] = {
+                "logical_flow": overall_rating,
+                "paragraph_structure": max(1, min(5, 2 + (avg_standard - 85) / 15)),
+                "transition_usage": overall_rating
+            }
+            
+            metrics["mechanics"] = {
+                "spelling_accuracy": min(60 + (avg_standard - 70) * 0.8, 100),
+                "punctuation_usage": overall_rating,
+                "capitalization_accuracy": min(70 + (avg_standard - 70) * 0.6, 100)
+            }
+            
+            metrics["writing_fluency"] = {
+                "words_per_minute": max(5, 15 + (avg_standard - 100) * 0.3),
+                "fluency_rating": overall_rating
+            }
+            
+            metrics["idea_development"] = {
+                "content_quality": overall_rating,
+                "detail_elaboration": max(1, min(5, 2 + (avg_standard - 85) / 20)),
+                "creativity_score": overall_rating
+            }
+            
+            # Generate evidence
+            for score in writing_scores:
+                if score.standard_score:
+                    metrics["evidence"].append(f"{score.subtest_name}: SS={score.standard_score}")
+        
+        return metrics
+    
+    async def calculate_oral_language_metrics(
+        self, 
+        language_scores: List[PsychoedScoreDTO], 
+        student_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate oral language metrics"""
+        
+        metrics = {
+            "receptive_language": {},
+            "expressive_language": {},
+            "vocabulary_development": {},
+            "language_comprehension": {},
+            "overall_rating": 0.0,
+            "evidence": []
+        }
+        
+        standard_scores = [s.standard_score for s in language_scores if s.standard_score]
+        
+        if standard_scores:
+            avg_standard = np.mean(standard_scores)
+            overall_rating = self._standard_score_to_rating(avg_standard)
+            
+            metrics["overall_rating"] = overall_rating
+            
+            # Component analysis
+            metrics["receptive_language"] = {
+                "listening_comprehension": overall_rating,
+                "following_directions": max(1, min(5, 2 + (avg_standard - 85) / 15)),
+                "auditory_processing": overall_rating
+            }
+            
+            metrics["expressive_language"] = {
+                "oral_expression": overall_rating,
+                "sentence_formulation": max(1, min(5, 3 + (avg_standard - 100) / 15)),
+                "word_retrieval": overall_rating
+            }
+            
+            metrics["vocabulary_development"] = {
+                "receptive_vocabulary": overall_rating,
+                "expressive_vocabulary": max(1, min(5, 2.5 + (avg_standard - 95) / 15)),
+                "semantic_knowledge": overall_rating
+            }
+            
+            # Generate evidence
+            for score in language_scores:
+                if score.standard_score:
+                    metrics["evidence"].append(f"{score.subtest_name}: SS={score.standard_score}")
+        
+        return metrics
+    
+    def _standard_score_to_rating(self, standard_score: float) -> float:
+        """Convert standard score to 1-5 rating scale"""
+        
+        if standard_score >= 115:
+            return 5.0  # Well above average
+        elif standard_score >= 105:
+            return 4.0  # Above average
+        elif standard_score >= 85:
+            return 3.0  # Average
+        elif standard_score >= 70:
+            return 2.0  # Below average
+        else:
+            return 1.0  # Well below average
+    
+    def _estimate_reading_level(self, standard_score: float, student_grade: int) -> str:
+        """Estimate reading level based on standard score"""
+        
+        if standard_score >= 115:
+            return f"{student_grade + 1}.5"
+        elif standard_score >= 105:
+            return f"{student_grade}.8"
+        elif standard_score >= 95:
+            return f"{student_grade}.5"
+        elif standard_score >= 85:
+            return f"{student_grade}.2"
+        elif standard_score >= 75:
+            return f"{max(1, student_grade - 1)}.5"
+        else:
+            return f"{max(1, student_grade - 2)}.0"
+
+
+class BehavioralQuantifier:
+    """Handles behavioral frequency matrix generation"""
+    
+    async def generate_frequency_matrices(
+        self, 
+        observations: List[str], 
+        student_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Generate behavioral frequency matrices from observations"""
+        
+        logger.info(f"Generating behavioral metrics from {len(observations)} observations")
+        
+        behavioral_metrics = {}
+        
+        # Analyze observations for behavioral patterns
+        attention_patterns = self._analyze_attention_patterns(observations)
+        social_patterns = self._analyze_social_patterns(observations)
+        emotional_patterns = self._analyze_emotional_patterns(observations)
+        
+        # Calculate attention/focus metrics
+        behavioral_metrics["attention_focus"] = await self._calculate_attention_metrics(attention_patterns)
+        
+        # Calculate social skills metrics
+        behavioral_metrics["social_skills"] = await self._calculate_social_metrics(social_patterns)
+        
+        # Calculate emotional regulation metrics
+        behavioral_metrics["emotional_regulation"] = await self._calculate_emotional_metrics(emotional_patterns)
+        
+        return behavioral_metrics
+    
+    def _analyze_attention_patterns(self, observations: List[str]) -> Dict[str, Any]:
+        """Analyze attention-related patterns from observations"""
+        
+        attention_keywords = {
+            "distracted": ["distracted", "off-task", "difficulty focusing", "attention wanders"],
+            "sustained": ["sustained attention", "focused", "concentrates", "stays on task"],
+            "breaks": ["needs breaks", "frequent breaks", "break required", "rest periods"],
+            "completion": ["completes tasks", "finishes work", "task completion", "follows through"]
+        }
+        
+        patterns = {keyword: 0 for keyword in attention_keywords.keys()}
+        
+        for observation in observations:
+            obs_lower = observation.lower()
+            for pattern, keywords in attention_keywords.items():
+                if any(keyword in obs_lower for keyword in keywords):
+                    patterns[pattern] += 1
+        
+        return patterns
+    
+    def _analyze_social_patterns(self, observations: List[str]) -> Dict[str, Any]:
+        """Analyze social skills patterns from observations"""
+        
+        social_keywords = {
+            "peer_positive": ["interacts well", "plays cooperatively", "shares", "takes turns"],
+            "peer_negative": ["conflicts with peers", "difficulty sharing", "argumentative", "isolated"],
+            "adult_positive": ["respectful", "follows directions", "asks for help appropriately"],
+            "adult_negative": ["defiant", "argumentative with adults", "does not follow directions"],
+            "communication": ["communicates clearly", "expresses needs", "uses appropriate language"]
+        }
+        
+        patterns = {keyword: 0 for keyword in social_keywords.keys()}
+        
+        for observation in observations:
+            obs_lower = observation.lower()
+            for pattern, keywords in social_keywords.items():
+                if any(keyword in obs_lower for keyword in keywords):
+                    patterns[pattern] += 1
+        
+        return patterns
+    
+    def _analyze_emotional_patterns(self, observations: List[str]) -> Dict[str, Any]:
+        """Analyze emotional regulation patterns from observations"""
+        
+        emotional_keywords = {
+            "frustration": ["frustrated", "becomes upset", "gives up easily", "throws materials"],
+            "coping": ["uses coping strategies", "calms down", "asks for help", "takes deep breaths"],
+            "intensity": ["explosive", "meltdown", "extreme reaction", "intense emotions"],
+            "recovery": ["recovers quickly", "bounces back", "moves on", "lets go of upset"]
+        }
+        
+        patterns = {keyword: 0 for keyword in emotional_keywords.keys()}
+        
+        for observation in observations:
+            obs_lower = observation.lower()
+            for pattern, keywords in emotional_keywords.items():
+                if any(keyword in obs_lower for keyword in keywords):
+                    patterns[pattern] += 1
+        
+        return patterns
+    
+    async def _calculate_attention_metrics(self, patterns: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate attention/focus domain metrics"""
+        
+        # Calculate frequency ratings (1-5 scale, where 1 = rarely problematic, 5 = frequently problematic)
+        distraction_frequency = min(5, 1 + patterns.get("distracted", 0) * 0.5)
+        sustained_attention = max(1, 5 - patterns.get("sustained", 0) * 0.5)
+        
+        attention_metrics = {
+            "sustained_attention_duration": {
+                "minutes_estimate": max(5, 30 - distraction_frequency * 5),
+                "quality_rating": max(1, 6 - distraction_frequency)
+            },
+            "distractibility_frequency": {
+                "per_hour_estimate": max(1, distraction_frequency * 2),
+                "frequency_rating": distraction_frequency,
+                "triggers": ["environmental", "internal"] if distraction_frequency > 3 else ["minimal"]
+            },
+            "break_requirements": {
+                "frequency": patterns.get("breaks", 1),
+                "duration_minutes": 5 + patterns.get("breaks", 0) * 2,
+                "self_advocacy": max(1, min(5, 3 + patterns.get("completion", 0) * 0.5))
+            },
+            "task_completion": {
+                "completion_rate_percent": max(50, 100 - distraction_frequency * 10),
+                "completion_rating": max(1, 6 - distraction_frequency)
+            },
+            "frequency_rating": (distraction_frequency + (6 - sustained_attention)) / 2,
+            "observations": [f"Distraction frequency: {distraction_frequency}/5", 
+                          f"Sustained attention: {sustained_attention}/5"]
+        }
+        
+        return attention_metrics
+    
+    async def _calculate_social_metrics(self, patterns: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate social skills domain metrics"""
+        
+        peer_positive = patterns.get("peer_positive", 0)
+        peer_negative = patterns.get("peer_negative", 0)
+        adult_positive = patterns.get("adult_positive", 0)
+        adult_negative = patterns.get("adult_negative", 0)
+        
+        # Calculate 1-5 ratings (5 = excellent, 1 = significant concern)
+        peer_rating = max(1, min(5, 3 + peer_positive - peer_negative))
+        adult_rating = max(1, min(5, 3 + adult_positive - adult_negative))
+        
+        social_metrics = {
+            "peer_interaction_quality": {
+                "rating_1_5": peer_rating,
+                "cooperation_level": peer_rating,
+                "conflict_frequency": max(1, peer_negative),
+                "social_initiation": max(1, min(5, 2 + peer_positive * 0.5))
+            },
+            "adult_interaction_appropriateness": {
+                "rating_1_5": adult_rating,
+                "respect_level": adult_rating,
+                "help_seeking": max(1, min(5, 2 + adult_positive * 0.5)),
+                "compliance": adult_rating
+            },
+            "conflict_resolution": {
+                "success_rate_percent": max(20, 80 - peer_negative * 10),
+                "strategy_usage": peer_rating,
+                "mediation_needed": "yes" if peer_negative > 2 else "no"
+            },
+            "communication_effectiveness": {
+                "rating_1_5": (peer_rating + adult_rating) / 2,
+                "clarity": max(1, min(5, 3 + patterns.get("communication", 0) * 0.5)),
+                "appropriateness": (peer_rating + adult_rating) / 2
+            },
+            "frequency_rating": 6 - ((peer_rating + adult_rating) / 2),  # Convert to frequency scale
+            "observations": [f"Peer interactions: {peer_rating}/5",
+                          f"Adult interactions: {adult_rating}/5"]
+        }
+        
+        return social_metrics
+    
+    async def _calculate_emotional_metrics(self, patterns: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate emotional regulation domain metrics"""
+        
+        frustration = patterns.get("frustration", 0)
+        coping = patterns.get("coping", 0)
+        intensity = patterns.get("intensity", 0)
+        recovery = patterns.get("recovery", 0)
+        
+        # Calculate 1-5 ratings
+        frustration_tolerance = max(1, min(5, 5 - frustration))
+        coping_usage = max(1, min(5, 1 + coping))
+        emotional_intensity = max(1, min(5, 1 + intensity))
+        recovery_time = max(1, min(5, 1 + recovery))
+        
+        emotional_metrics = {
+            "frustration_tolerance": {
+                "rating_1_5": frustration_tolerance,
+                "persistence_level": frustration_tolerance,
+                "trigger_sensitivity": max(1, intensity + 1),
+                "threshold": "high" if frustration_tolerance >= 4 else "low"
+            },
+            "coping_strategy_usage": {
+                "frequency": coping,
+                "effectiveness_rating": coping_usage,
+                "strategy_types": ["self-regulation", "help-seeking"] if coping > 1 else ["limited"],
+                "independence_level": coping_usage
+            },
+            "emotional_intensity": {
+                "rating_1_5": emotional_intensity,
+                "frequency_of_outbursts": intensity,
+                "severity_level": "high" if intensity > 2 else "moderate",
+                "pattern": "frequent" if intensity > 1 else "occasional"
+            },
+            "recovery_time": {
+                "minutes_estimate": max(2, 15 - recovery * 3),
+                "recovery_rating": recovery_time,
+                "bounce_back_ability": recovery_time,
+                "support_needed": "minimal" if recovery > 1 else "moderate"
+            },
+            "frequency_rating": (frustration + intensity + (5 - coping) + (5 - recovery)) / 4,
+            "observations": [f"Frustration tolerance: {frustration_tolerance}/5",
+                          f"Coping strategies: {coping_usage}/5",
+                          f"Recovery ability: {recovery_time}/5"]
+        }
+        
+        return emotional_metrics
+
+
+class NormativeDataProcessor:
+    """Handles grade level conversions and normative data processing"""
+    
+    def convert_to_grade_equivalents(
+        self, 
+        scores: List[PsychoedScoreDTO], 
+        student_age: int, 
+        conversion_tables: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Convert standard scores to grade equivalents"""
+        
+        grade_performance = {}
+        
+        # Group scores by domain
+        domain_scores = self._group_scores_by_domain(scores)
+        
+        for domain, domain_scores_list in domain_scores.items():
+            if domain_scores_list:
+                avg_standard = np.mean([s.standard_score for s in domain_scores_list if s.standard_score])
+                
+                grade_equivalent = self._calculate_grade_equivalent(avg_standard, student_age, domain)
+                percentile = self._standard_to_percentile(avg_standard)
+                
+                grade_performance[domain] = {
+                    "grade_equivalent": grade_equivalent,
+                    "standard_score": avg_standard,
+                    "percentile_rank": percentile,
+                    "performance_level": self._categorize_performance(avg_standard),
+                    "relative_standing": self._describe_relative_standing(percentile)
+                }
+        
+        return grade_performance
+    
+    def _group_scores_by_domain(self, scores: List[PsychoedScoreDTO]) -> Dict[str, List[PsychoedScoreDTO]]:
+        """Group scores by academic domain for grade equivalent calculation"""
+        
+        domain_mappings = {
+            "reading": ["reading", "decoding", "comprehension", "fluency"],
+            "mathematics": ["math", "calculation", "problem solving", "numerical"],
+            "written_language": ["writing", "spelling", "composition"],
+            "oral_language": ["listening", "oral", "language", "vocabulary"]
+        }
+        
+        domain_scores = {domain: [] for domain in domain_mappings.keys()}
+        
+        for score in scores:
+            subtest_lower = score.subtest_name.lower()
+            
+            for domain, keywords in domain_mappings.items():
+                if any(keyword in subtest_lower for keyword in keywords):
+                    domain_scores[domain].append(score)
+                    break
+        
+        return {k: v for k, v in domain_scores.items() if v}
+    
+    def _calculate_grade_equivalent(self, standard_score: float, student_age: int, domain: str) -> str:
+        """Calculate grade equivalent from standard score"""
+        
+        # Estimate current grade from age
+        estimated_grade = max(0, student_age - 5)  # Rough estimate
+        
+        # Calculate grade equivalent based on standard score
+        if standard_score >= 130:
+            grade_equiv = estimated_grade + 3.0
+        elif standard_score >= 120:
+            grade_equiv = estimated_grade + 2.0
+        elif standard_score >= 115:
+            grade_equiv = estimated_grade + 1.5
+        elif standard_score >= 110:
+            grade_equiv = estimated_grade + 1.0
+        elif standard_score >= 105:
+            grade_equiv = estimated_grade + 0.5
+        elif standard_score >= 95:
+            grade_equiv = estimated_grade
+        elif standard_score >= 90:
+            grade_equiv = estimated_grade - 0.5
+        elif standard_score >= 85:
+            grade_equiv = estimated_grade - 1.0
+        elif standard_score >= 80:
+            grade_equiv = estimated_grade - 1.5
+        elif standard_score >= 75:
+            grade_equiv = estimated_grade - 2.0
+        else:
+            grade_equiv = max(0, estimated_grade - 3.0)
+        
+        # Format as grade.month
+        grade_level = int(grade_equiv)
+        month = int((grade_equiv - grade_level) * 10)
+        
+        return f"{grade_level}.{month}"
+    
+    def _standard_to_percentile(self, standard_score: float) -> float:
+        """Convert standard score to percentile rank"""
+        
+        # Approximate conversion using normal distribution
+        z_score = (standard_score - 100) / 15
+        
+        # Approximate percentile conversion
+        if z_score >= 2.0:
+            return 98
+        elif z_score >= 1.5:
+            return 93
+        elif z_score >= 1.0:
+            return 84
+        elif z_score >= 0.5:
+            return 69
+        elif z_score >= 0.0:
+            return 50
+        elif z_score >= -0.5:
+            return 31
+        elif z_score >= -1.0:
+            return 16
+        elif z_score >= -1.5:
+            return 7
+        elif z_score >= -2.0:
+            return 2
+        else:
+            return 1
+    
+    def _categorize_performance(self, standard_score: float) -> str:
+        """Categorize performance level"""
+        
+        if standard_score >= 130:
+            return "very_superior"
+        elif standard_score >= 120:
+            return "superior"
+        elif standard_score >= 110:
+            return "high_average"
+        elif standard_score >= 90:
+            return "average"
+        elif standard_score >= 80:
+            return "low_average"
+        elif standard_score >= 70:
+            return "borderline"
+        else:
+            return "extremely_low"
+    
+    def _describe_relative_standing(self, percentile: float) -> str:
+        """Describe relative standing based on percentile"""
+        
+        if percentile >= 98:
+            return "ranks higher than 98% of peers"
+        elif percentile >= 90:
+            return "ranks higher than 90% of peers"
+        elif percentile >= 75:
+            return "ranks higher than 75% of peers"
+        elif percentile >= 50:
+            return "ranks in the average range"
+        elif percentile >= 25:
+            return "ranks lower than 75% of peers"
+        elif percentile >= 10:
+            return "ranks lower than 90% of peers"
+        else:
+            return "ranks lower than 98% of peers"

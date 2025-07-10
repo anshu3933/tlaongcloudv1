@@ -10,22 +10,25 @@ import httpx
 
 from assessment_pipeline_service.models.assessment_models import QuantifiedAssessmentData
 from assessment_pipeline_service.schemas.assessment_schemas import QuantifiedMetricsDTO
+from assessment_pipeline_service.src.quality_assurance import QualityAssuranceEngine
 
 logger = logging.getLogger(__name__)
 
 class RAGIntegrationService:
-    """Integrates quantified assessment data with the existing RAG system"""
+    """Integrates quantified assessment data with the existing RAG system with quality controls"""
     
     def __init__(self, special_ed_service_url: str = "http://localhost:8005"):
         self.special_ed_service_url = special_ed_service_url
         self.timeout = 300  # 5 minutes for RAG operations
+        self.quality_engine = QualityAssuranceEngine()
         
-    async def create_rag_enhanced_iep(
+    async def create_rag_enhanced_iep_with_quality_controls(
         self,
         student_id: str,
         quantified_data: QuantifiedAssessmentData,
         template_id: Optional[str] = None,
-        academic_year: str = "2025-2026"
+        academic_year: str = "2025-2026",
+        apply_quality_gates: bool = True
     ) -> Dict[str, Any]:
         """Create IEP using RAG with quantified assessment data"""
         
@@ -65,7 +68,12 @@ class RAGIntegrationService:
                     iep_result = response.json()
                     logger.info(f"RAG IEP created successfully for student {student_id}")
                     
-                    # Enhance the result with assessment pipeline metadata
+                    # Apply quality assurance validation
+                    quality_results = await self._validate_iep_quality(
+                        iep_result, quantified_data, rag_context
+                    )
+                    
+                    # Enhance the result with assessment pipeline metadata and quality metrics
                     enhanced_result = {
                         **iep_result,
                         "assessment_pipeline_metadata": {
@@ -74,7 +82,8 @@ class RAGIntegrationService:
                             "confidence_metrics": quantified_data.confidence_metrics,
                             "source_documents": quantified_data.source_documents,
                             "pipeline_version": "2.0"
-                        }
+                        },
+                        "quality_assessment": quality_results
                     }
                     
                     return enhanced_result
@@ -301,3 +310,155 @@ class RAGIntegrationService:
         except Exception as e:
             logger.error(f"RAG service connection failed: {e}")
             return False
+    
+    async def _validate_iep_quality(
+        self, 
+        iep_result: Dict[str, Any], 
+        quantified_data: QuantifiedAssessmentData,
+        rag_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Apply comprehensive quality validation to generated IEP content"""
+        
+        logger.info("Applying quality assurance validation to generated IEP")
+        
+        # Extract generated content from IEP result
+        generated_content = self._extract_generated_content(iep_result)
+        
+        # Prepare source documents for regurgitation detection
+        source_documents = self._prepare_source_documents(quantified_data)
+        
+        # Apply quality validation
+        quality_results = await self.quality_engine.validate_generated_content(
+            generated_content=generated_content,
+            source_documents=source_documents,
+            quantified_data=self._format_quantified_data_for_quality_check(quantified_data)
+        )
+        
+        # Log quality results
+        logger.info(
+            f"Quality validation complete: "
+            f"Score: {quality_results['overall_quality_score']:.2f}, "
+            f"Passes gates: {quality_results['passes_quality_gates']}, "
+            f"Status: {quality_results['approval_status']}"
+        )
+        
+        return quality_results
+    
+    def _extract_generated_content(self, iep_result: Dict[str, Any]) -> Dict[str, str]:
+        """Extract textual content from IEP result for quality analysis"""
+        
+        generated_content = {}
+        
+        # Extract content from the IEP structure
+        iep_content = iep_result.get("content", {})
+        
+        # Standard IEP sections to analyze
+        sections_to_analyze = [
+            "present_levels", "long_term_goals", "short_term_goals", 
+            "oral_language", "reading_familiar", "reading_unfamiliar", 
+            "reading_comprehension", "spelling", "writing", "concept_development",
+            "math_goals", "recommendations"
+        ]
+        
+        for section in sections_to_analyze:
+            if section in iep_content and iep_content[section]:
+                content = iep_content[section]
+                # Handle different content formats
+                if isinstance(content, dict):
+                    # Flatten nested content
+                    text_content = self._flatten_content_to_text(content)
+                elif isinstance(content, list):
+                    # Join list items
+                    text_content = " ".join(str(item) for item in content if item)
+                else:
+                    text_content = str(content)
+                
+                if text_content and len(text_content.strip()) > 20:
+                    generated_content[section] = text_content.strip()
+        
+        return generated_content
+    
+    def _flatten_content_to_text(self, content: Dict[str, Any]) -> str:
+        """Flatten nested content dictionary to text for analysis"""
+        
+        text_parts = []
+        
+        for key, value in content.items():
+            if isinstance(value, dict):
+                nested_text = self._flatten_content_to_text(value)
+                if nested_text:
+                    text_parts.append(nested_text)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str) and item.strip():
+                        text_parts.append(item.strip())
+                    elif isinstance(item, dict):
+                        nested_text = self._flatten_content_to_text(item)
+                        if nested_text:
+                            text_parts.append(nested_text)
+            elif isinstance(value, str) and value.strip():
+                text_parts.append(value.strip())
+        
+        return " ".join(text_parts)
+    
+    def _prepare_source_documents(self, quantified_data: QuantifiedAssessmentData) -> List[str]:
+        """Prepare source documents for regurgitation detection"""
+        
+        source_documents = []
+        
+        # Add source documents if available
+        if quantified_data.source_documents:
+            if isinstance(quantified_data.source_documents, list):
+                source_documents.extend(quantified_data.source_documents)
+            elif isinstance(quantified_data.source_documents, str):
+                source_documents.append(quantified_data.source_documents)
+        
+        # Add standardized PLOP content
+        if quantified_data.standardized_plop:
+            plop_text = self._flatten_content_to_text(quantified_data.standardized_plop)
+            if plop_text:
+                source_documents.append(plop_text)
+        
+        # Add assessment narrative if available
+        if hasattr(quantified_data, 'assessment_narrative') and quantified_data.assessment_narrative:
+            source_documents.append(quantified_data.assessment_narrative)
+        
+        return source_documents
+    
+    def _format_quantified_data_for_quality_check(self, quantified_data: QuantifiedAssessmentData) -> Dict[str, Any]:
+        """Format quantified data for quality validation"""
+        
+        return {
+            "academic_metrics": {
+                "reading": {
+                    "overall_rating": quantified_data.reading_composite,
+                    "grade_equivalent": getattr(quantified_data, 'reading_grade_equivalent', None)
+                },
+                "mathematics": {
+                    "overall_rating": quantified_data.math_composite,
+                    "grade_equivalent": getattr(quantified_data, 'math_grade_equivalent', None)
+                },
+                "writing": {
+                    "overall_rating": quantified_data.writing_composite,
+                    "grade_equivalent": getattr(quantified_data, 'writing_grade_equivalent', None)
+                }
+            },
+            "behavioral_metrics": {
+                "attention_focus": {
+                    "rating": getattr(quantified_data, 'attention_rating', None)
+                },
+                "social_emotional": {
+                    "rating": getattr(quantified_data, 'social_emotional_rating', None)
+                }
+            },
+            "grade_level_performance": {
+                "overall": {
+                    "grade_equivalent": getattr(quantified_data, 'overall_grade_equivalent', None),
+                    "percentile": getattr(quantified_data, 'overall_percentile', None)
+                }
+            },
+            "strengths_and_needs": {
+                "strengths": quantified_data.priority_goals or [],
+                "needs": getattr(quantified_data, 'identified_needs', [])
+            }
+        }
