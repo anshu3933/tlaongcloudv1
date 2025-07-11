@@ -1,9 +1,24 @@
-# Assessment Pipeline Task Tracker
+# Assessment Pipeline Task Tracker - REVISED ARCHITECTURE
 
 ## Project Overview
-**Goal**: Implement 4-stage assessment pipeline from psychoeducational documents to RAG-enhanced IEPs  
-**Status**: Foundation Complete, Core Implementation Needed  
-**Target**: Production-ready pipeline with 76-98% extraction confidence and quality controls  
+**Goal**: Implement processing-only assessment pipeline integrated with existing TLA Educational Platform architecture  
+**Status**: Core Processing Complete, Integration Layer Needed  
+**Target**: Production-ready pipeline with 76-98% extraction confidence integrated with special_education_service  
+**Architecture**: Microservices with assessment pipeline as processing service, special_education_service as data owner
+
+## 🏗️ **ARCHITECTURAL ALIGNMENT** ✅ COMPLETE
+
+### Service Boundaries Defined
+- **Assessment Pipeline Service**: Document processing, score extraction, quality assurance (processing only)
+- **Special Education Service**: Data persistence, IEP lifecycle, student management (data owner)
+- **Auth Service**: JWT authentication and authorization (existing)
+- **ADK Host**: API gateway and service orchestration (existing)
+
+### Infrastructure Reuse
+- **Database**: Existing PostgreSQL (:5432) with schema separation
+- **Cache/Queue**: Existing Redis (:6379) for background tasks
+- **Authentication**: Existing JWT system from auth_service (:8003)
+- **Deployment**: Existing docker-compose.yml infrastructure
 
 ---
 
@@ -255,368 +270,293 @@
 
 ---
 
-## 🛠 **STAGE 5: COMPLETE API & DATABASE INTEGRATION** ❌ 0% Complete
+## 🔗 **STAGE 4 COMPLETION: ARCHITECTURAL INTEGRATION** 🔄 15% Remaining
 
-### Full Assessment Pipeline Router
-- [ ] **Complete pipeline router (`api/assessment_pipeline_router.py`)**
-  - [ ] Document processing endpoints with file upload handling
-  - [ ] Quantification pipeline endpoints with progress tracking
-  - [ ] Quality-controlled IEP generation endpoints
-  - [ ] Professional review and approval endpoints
-  - [ ] End-to-end pipeline orchestration endpoints
-  - [ ] Status monitoring and error handling
+### Database Consolidation (CRITICAL - Avoid Redundancy)
+- [ ] **Consolidate assessment models into special_education_service**
+  - [ ] Move all assessment models to existing service database
+  - [ ] Remove duplicate model definitions from assessment pipeline
+  - [ ] Ensure data consistency across services
+  - [ ] Migrate any existing assessment pipeline data
 
-### Stage 1: Document Processing Endpoints
-- [ ] **Assessment document intake**
-  - [ ] `POST /pipeline/documents/upload` - Multi-file upload with validation
-  - [ ] `POST /pipeline/documents/process/{document_id}` - Process single document
-  - [ ] `POST /pipeline/documents/batch-process/{student_id}` - Process multiple documents
-  - [ ] `GET /pipeline/documents/extraction-preview/{extraction_id}` - Preview results
-  - [ ] `GET /pipeline/documents/confidence-report/{extraction_id}` - Confidence metrics
-  - [ ] `POST /pipeline/documents/validate-extraction` - Manual validation interface
+- [ ] **Refactor assessment pipeline to processing-only service**
+  - [ ] Remove database models and dependencies
+  - [ ] Convert to stateless processing service
+  - [ ] Implement service-to-service communication
+  - [ ] Use special_education_service APIs for data persistence
 
-### Stage 2: Quantification Endpoints
-- [ ] **Metrics processing**
-  - [ ] `POST /pipeline/quantify/present-levels/{student_id}` - Convert to standardized metrics
-  - [ ] `GET /pipeline/quantify/metrics/{quantification_id}` - Retrieve quantified data
-  - [ ] `POST /pipeline/quantify/validate-metrics` - Quality check quantified metrics
-  - [ ] `GET /pipeline/quantify/grade-equivalents/{student_id}` - Grade level analysis
-  - [ ] `POST /pipeline/quantify/behavioral-frequencies` - Behavioral data processing
-  - [ ] `GET /pipeline/quantify/composite-profile/{student_id}` - Complete student profile
+### Authentication Integration (Reuse Existing)
+- [ ] **Integrate with existing JWT auth system**
+  - [ ] Connect to auth_service (:8003) endpoints
+  - [ ] Implement role-based access control middleware
+  - [ ] Remove duplicate authentication logic
+  - [ ] Use existing user management system
 
-### Stage 3: Quality-Controlled Generation Endpoints
-- [ ] **IEP generation with quality controls**
-  - [ ] `POST /pipeline/generate/iep-with-quality/{student_id}` - Generate with quality validation
-  - [ ] `GET /pipeline/generate/quality-report/{generation_id}` - Detailed quality analysis
-  - [ ] `POST /pipeline/generate/regenerate-section` - Regenerate failed sections
-  - [ ] `GET /pipeline/generate/quality-dashboard/{generation_id}` - Quality metrics visualization
-  - [ ] `POST /pipeline/generate/override-quality-gates` - Professional override capability
-  - [ ] `GET /pipeline/generate/improvement-suggestions/{generation_id}` - Quality improvement recommendations
-
-### Stage 4: Professional Review Endpoints
-- [ ] **Review and approval workflow**
-  - [ ] `POST /pipeline/review/create-package/{iep_id}` - Generate comprehensive review package
-  - [ ] `GET /pipeline/review/package/{package_id}` - Retrieve review interface data
-  - [ ] `POST /pipeline/review/submit-approval/{package_id}` - Submit approval with comments
-  - [ ] `GET /pipeline/review/collaboration/{package_id}` - Multi-user collaboration interface
-  - [ ] `POST /pipeline/review/add-comment` - Add section-specific comments
-  - [ ] `GET /pipeline/review/approval-history/{iep_id}` - Complete approval audit trail
-
-### Complete Pipeline Orchestration
-- [ ] **End-to-end pipeline management**
-  - [ ] `POST /pipeline/complete-assessment-to-iep/{student_id}` - Full pipeline execution
-  - [ ] `GET /pipeline/status/{job_id}` - Real-time pipeline progress tracking
-  - [ ] `POST /pipeline/pause/{job_id}` - Pause pipeline for manual intervention
-  - [ ] `POST /pipeline/resume/{job_id}` - Resume paused pipeline
-  - [ ] `GET /pipeline/performance-metrics` - Pipeline performance analytics
-  - [ ] `POST /pipeline/batch-process-students` - Multiple student processing
-
-### Database Integration & Models
-- [ ] **Assessment pipeline models integration**
-  - [ ] `AssessmentDocument` - Document metadata and processing status
-  - [ ] `ExtractionResult` - Document AI extraction results
-  - [ ] `QuantifiedMetrics` - Standardized assessment metrics
-  - [ ] `QualityAssessment` - Quality validation results
-  - [ ] `ReviewPackage` - Professional review packages
-  - [ ] `ApprovalDecision` - Review and approval tracking
-  - [ ] `PipelineJob` - End-to-end job management
-  - [ ] `ProcessingError` - Error tracking and resolution
-
-- [ ] **Enhanced existing models**
-  - [ ] Update `Student` model with assessment pipeline relationships
-  - [ ] Update `IEP` model with quality metrics and source tracking
-  - [ ] Add pipeline metadata to all generated content
-  - [ ] Implement soft delete and versioning for all pipeline data
-
-### Performance & Monitoring
-- [ ] **Pipeline monitoring endpoints**
-  - [ ] `GET /pipeline/health` - Service health and dependency status
-  - [ ] `GET /pipeline/metrics/performance` - Processing time analytics
-  - [ ] `GET /pipeline/metrics/quality-trends` - Quality score trends over time
-  - [ ] `GET /pipeline/metrics/error-analysis` - Error rate and type analysis
-  - [ ] `GET /pipeline/metrics/user-satisfaction` - Review and approval metrics
-
-**Estimated Effort:** 4-5 days implementation + 2-3 days integration testing
+**Estimated Effort:** 1-2 days (reduced from original 1 week due to architectural alignment)
 
 ---
 
-## ⚙️ **STAGE 6: INFRASTRUCTURE & PRODUCTION DEPLOYMENT** ❌ 0% Complete
+## 🚀 **STAGE 5: SERVICE INTEGRATION & API COMPLETION** ❌ 0% Complete
 
-### Production Google Cloud Configuration
-- [ ] **Document AI production setup**
-  - [ ] Production form parser processor configuration
-  - [ ] Custom assessment type processors (WISC-V, WIAT-IV, BASC-3)
-  - [ ] Processor endpoint security and rate limiting
-  - [ ] Multi-region deployment for high availability
-  - [ ] Processor performance monitoring and auto-scaling
-  - [ ] Batch processing optimization for large document sets
+### Service Communication Architecture
+- [ ] **Implement proper service-to-service communication**
+  - [ ] Assessment Pipeline → Special Education Service data flow
+  - [ ] Error handling and retry mechanisms
+  - [ ] Request/response validation
+  - [ ] Performance optimization for inter-service calls
 
-- [ ] **Secure cloud storage architecture**
-  - [ ] Production GCS bucket with lifecycle policies
-  - [ ] Encrypted temporary upload bucket with auto-deletion
-  - [ ] Cross-region replication for disaster recovery
-  - [ ] IAM roles and permissions with principle of least privilege
-  - [ ] Security credential rotation and management
-  - [ ] Audit logging for all document access
+### API Contract Updates (Avoid Duplication)
+- [ ] **Update API contracts to use special_education_service as data owner**
+  - [ ] Remove duplicate endpoints from assessment pipeline
+  - [ ] Route data requests through special education service
+  - [ ] Implement processing-only endpoints in assessment pipeline
+  - [ ] Ensure API consistency across services
 
-### Advanced Background Processing
-- [ ] **Scalable task processing (`src/tasks/pipeline_tasks.py`)**
-  - [ ] Celery worker configuration with Redis/RabbitMQ
-  - [ ] Priority queue management for urgent assessments
-  - [ ] Distributed document batch processing
-  - [ ] Large file chunking and parallel processing
-  - [ ] Real-time progress tracking with WebSocket updates
-  - [ ] Intelligent error recovery and retry strategies
-  - [ ] Resource-aware task scheduling
+### Processing-Only API Endpoints (Assessment Pipeline Service)
+- [ ] **Document processing endpoints**
+  - [ ] `POST /process/documents/upload` - Multi-file upload with validation
+  - [ ] `POST /process/documents/extract/{document_id}` - Extract scores and data
+  - [ ] `GET /process/documents/confidence/{extraction_id}` - Confidence metrics
+  - [ ] `POST /process/documents/validate` - Manual validation interface
 
-- [ ] **Enterprise job management**
-  - [ ] Multi-tenant job isolation and resource allocation
-  - [ ] Dynamic worker scaling based on queue depth
-  - [ ] Job prioritization based on student needs/deadlines
-  - [ ] Comprehensive timeout handling with graceful degradation
-  - [ ] Dead letter queue management for failed jobs
-  - [ ] Job dependency management for complex workflows
+- [ ] **Quantification processing endpoints**
+  - [ ] `POST /process/quantify/metrics` - Convert to standardized metrics
+  - [ ] `POST /process/quantify/validate` - Quality check quantified metrics
+  - [ ] `POST /process/quantify/grade-equivalents` - Grade level analysis
+  - [ ] `POST /process/quantify/behavioral-frequencies` - Behavioral data processing
 
-### Production Monitoring & Observability
-- [ ] **Comprehensive performance monitoring (`src/monitoring/metrics.py`)**
-  - [ ] End-to-end pipeline latency tracking
-  - [ ] Document AI confidence score trending
-  - [ ] Quality gate pass/fail rate analysis
-  - [ ] Resource utilization monitoring (CPU, memory, storage)
-  - [ ] Cost analysis and optimization recommendations
-  - [ ] User experience metrics (response times, error rates)
+- [ ] **Quality processing endpoints**
+  - [ ] `POST /process/quality/assess-content` - Quality validation
+  - [ ] `POST /process/quality/regurgitation-check` - Content originality check
+  - [ ] `POST /process/quality/smart-criteria` - SMART goal validation
+  - [ ] `POST /process/quality/terminology-analysis` - Professional terminology check
 
-- [ ] **Production logging and alerting**
-  - [ ] Structured JSON logging with correlation IDs
-  - [ ] Centralized log aggregation with Elasticsearch/Splunk
-  - [ ] Real-time error tracking with Sentry/similar
-  - [ ] Comprehensive audit trails for compliance
-  - [ ] Performance bottleneck identification
-  - [ ] Automated alert systems for quality threshold violations
+### Data Persistence (Special Education Service Extended)
+- [ ] **Extend existing models in special_education_service**
+  - [ ] Add assessment document tracking to existing Student model
+  - [ ] Extend IEP model with quality metrics and source tracking
+  - [ ] Add processing job status to existing workflow system
+  - [ ] Implement assessment data relationships
 
-### Security & Compliance
-- [ ] **Data protection and privacy**
-  - [ ] End-to-end encryption for all assessment data
-  - [ ] FERPA compliance validation and documentation
-  - [ ] Data retention policies with automated cleanup
-  - [ ] Personal information anonymization capabilities
-  - [ ] Secure API authentication with JWT and rate limiting
-  - [ ] Penetration testing and vulnerability assessment
+- [ ] **Service integration endpoints in special_education_service**
+  - [ ] `POST /api/v1/assessments/upload-and-process` - Complete workflow
+  - [ ] `GET /api/v1/assessments/status/{job_id}` - Processing status
+  - [ ] `GET /api/v1/students/{id}/assessment-data` - Consolidated view
+  - [ ] `POST /api/v1/ieps/generate-with-assessments` - Enhanced IEP creation
 
-- [ ] **Operational security**
-  - [ ] Container security scanning and hardening
-  - [ ] Network security with VPC and firewall rules
-  - [ ] Secrets management with HashiCorp Vault or similar
-  - [ ] Regular security updates and patch management
-  - [ ] Incident response procedures and runbooks
-  - [ ] Backup and disaster recovery testing
-
-### Deployment & DevOps
-- [ ] **Production deployment pipeline**
-  - [ ] Infrastructure as Code with Terraform
-  - [ ] Containerized deployment with Kubernetes
-  - [ ] Blue-green deployment strategy for zero downtime
-  - [ ] Automated testing in staging environments
-  - [ ] Performance testing and load testing
-  - [ ] Rollback procedures and health checks
-
-- [ ] **Operational excellence**
-  - [ ] Service level objectives (SLO) definition and monitoring
-  - [ ] Capacity planning and auto-scaling policies
-  - [ ] Cost optimization and resource right-sizing
-  - [ ] Documentation and runbook creation
-  - [ ] On-call procedures and escalation policies
-  - [ ] Regular disaster recovery drills
-
-**Estimated Effort:** 3-4 days infrastructure setup + 2-3 days security/compliance + 2 days testing
+**Estimated Effort:** 2-3 days (reduced due to reuse of existing infrastructure)
 
 ---
 
-## 🧪 **STAGE 7: COMPREHENSIVE TESTING & VALIDATION** ❌ 0% Complete
+## ⚙️ **STAGE 6: INFRASTRUCTURE INTEGRATION & OPTIMIZATION** ❌ 0% Complete
 
-### Unit Testing Suite
-- [ ] **Core component unit tests**
+### Existing Infrastructure Integration (Reuse & Extend)
+- [ ] **Extend existing docker-compose.yml**
+  - [ ] Add assessment pipeline service to existing compose file
+  - [ ] Configure service dependencies and health checks
+  - [ ] Ensure proper network connectivity between services
+  - [ ] Add environment variable configuration
+
+- [ ] **Use existing PostgreSQL instance**
+  - [ ] Configure assessment pipeline to use existing DB (:5432)
+  - [ ] Implement schema separation for assessment data
+  - [ ] Set up proper database migrations
+  - [ ] Ensure data consistency across services
+
+- [ ] **Integrate with existing Redis instance**
+  - [ ] Use existing Redis (:6379) for background task queue
+  - [ ] Implement job queue management with existing patterns
+  - [ ] Add assessment processing tasks to existing workflow
+  - [ ] Configure retry and error handling policies
+
+### Production Google Cloud Configuration (Minimal Extension)
+- [ ] **Document AI optimization**
+  - [ ] Production form parser processor tuning
+  - [ ] Batch processing optimization for multiple documents
+  - [ ] Error handling and retry strategies
+  - [ ] Cost optimization for API usage
+
+### Enhanced Monitoring (Extend Existing)
+- [ ] **Extend existing logging infrastructure**
+  - [ ] Add assessment pipeline service to existing log aggregation
+  - [ ] Implement structured logging with correlation IDs
+  - [ ] Configure alerts for processing failures
+  - [ ] Add performance metrics to existing monitoring
+
+- [ ] **Service health monitoring**
+  - [ ] Extend existing health check system
+  - [ ] Add assessment pipeline health endpoints
+  - [ ] Configure service dependency monitoring
+  - [ ] Implement automated recovery procedures
+
+### Background Processing (Use Existing Patterns)
+- [ ] **Integrate with existing async job system**
+  - [ ] Use existing job queue infrastructure in special_education_service
+  - [ ] Add assessment processing job types
+  - [ ] Implement progress tracking and status updates
+  - [ ] Configure timeout and retry policies
+
+**Estimated Effort:** 1-2 days (significantly reduced by reusing existing infrastructure)
+
+---
+
+## 🧪 **STAGE 7: TESTING & VALIDATION (Following Existing Patterns)** ❌ 0% Complete
+
+### Unit Testing Suite (Follow Existing Test Structure)
+- [ ] **Core component unit tests (follow existing patterns in special_education_service)**
   - [ ] `tests/test_assessment_intake_processor.py` - Document AI processing logic
   - [ ] `tests/test_quantification_engine.py` - Metric calculation algorithms
-  - [ ] `tests/test_quality_assurance.py` - All quality control methods
-  - [ ] `tests/test_rag_integration.py` - RAG service integration
+  - [ ] `tests/test_quality_assurance.py` - Quality control methods
   - [ ] `tests/test_professional_review.py` - Review workflow logic
-  - [ ] `tests/test_pipeline_orchestrator.py` - End-to-end orchestration
 
-- [ ] **Advanced testing scenarios**
-  - [ ] Edge case handling (malformed documents, missing data)
-  - [ ] Performance testing for large document sets
-  - [ ] Memory usage optimization validation
-  - [ ] Concurrent processing stress testing
-  - [ ] Error propagation and recovery testing
+- [ ] **Assessment processing edge cases**
+  - [ ] Malformed document handling
+  - [ ] Missing data scenarios
+  - [ ] Error propagation and recovery
   - [ ] Quality threshold boundary testing
 
-### Integration Testing Suite
-- [ ] **End-to-end pipeline testing (`tests/test_pipeline_integration.py`)**
-  - [ ] Complete document-to-IEP workflow validation
-  - [ ] Multi-student batch processing verification
-  - [ ] Quality gate enforcement testing
-  - [ ] Professional review workflow integration
-  - [ ] Database transaction integrity testing
-  - [ ] External service dependency testing
-
-- [ ] **Service integration testing**
-  - [ ] Document AI service integration with real processors
-  - [ ] Special education service RAG integration
+### Service Integration Testing (Leverage Existing Infrastructure)
+- [ ] **Cross-service integration testing**
+  - [ ] Assessment Pipeline → Special Education Service communication
+  - [ ] Authentication flow with existing auth_service
   - [ ] Database consistency across service boundaries
-  - [ ] Authentication and authorization flow testing
-  - [ ] File upload and storage integration
   - [ ] Background job processing integration
 
-### Quality Validation Testing
-- [ ] **Comprehensive quality testing (`tests/test_quality_control.py`)**
-  - [ ] Regurgitation detection accuracy testing
-  - [ ] SMART criteria validation with sample goals
-  - [ ] Professional terminology counting verification
-  - [ ] Specificity scoring algorithm validation
-  - [ ] Quality threshold compliance testing
-  - [ ] False positive/negative rate analysis
+- [ ] **End-to-end workflow testing**
+  - [ ] Complete document-to-IEP pipeline validation
+  - [ ] Multi-service data flow verification
+  - [ ] Error handling across service boundaries
+  - [ ] Performance testing with existing infrastructure
 
-- [ ] **Real-world validation**
-  - [ ] Professional educator review of generated content
-  - [ ] Comparison with manually created IEPs
-  - [ ] Compliance verification with special education regulations
-  - [ ] Accessibility testing for review interfaces
-  - [ ] User experience testing with actual professionals
-  - [ ] Performance benchmarking against quality standards
+### Quality Validation Testing (Focused on Core Features)
+- [ ] **Assessment processing accuracy**
+  - [ ] Document AI extraction confidence validation
+  - [ ] Score quantification accuracy testing
+  - [ ] Quality assurance engine validation
+  - [ ] Professional review workflow testing
 
-### Test Data & Fixtures
-- [ ] **Comprehensive test data suite (`tests/fixtures/`)**
-  - [ ] Sample WISC-V assessment documents (anonymized)
-  - [ ] Sample WIAT-IV achievement test reports
-  - [ ] Sample BASC-3 behavioral assessment reports
-  - [ ] Variety of document formats (PDF, scanned images, forms)
-  - [ ] Edge case documents (poor quality scans, incomplete data)
-  - [ ] Multi-assessment student portfolios
+- [ ] **Real-world validation (minimal scope)**
+  - [ ] Sample assessment document processing
+  - [ ] Quality metrics validation with known good data
+  - [ ] Performance benchmarking against requirements
 
-- [ ] **Quality control test cases**
-  - [ ] High-regurgitation content samples for detection testing
-  - [ ] Well-formed vs. poorly-formed SMART goals
-  - [ ] Professional vs. non-professional terminology examples
-  - [ ] Specific vs. vague content samples
-  - [ ] Complete assessment data vs. partial data scenarios
+### Test Data & Fixtures (Reuse Existing Patterns)
+- [ ] **Assessment test data suite**
+  - [ ] Sample anonymized assessment documents
+  - [ ] Test cases for different assessment types
+  - [ ] Edge case scenarios for robustness testing
+  - [ ] Quality control validation data
 
-### Performance & Load Testing
-- [ ] **Performance benchmarking**
-  - [ ] Document processing speed optimization
-  - [ ] Memory usage profiling and optimization
-  - [ ] Concurrent user load testing
-  - [ ] Database query performance optimization
-  - [ ] API response time validation
-  - [ ] Quality engine performance tuning
+### Performance Testing (Aligned with Existing Systems)
+- [ ] **Integration performance testing**
+  - [ ] Service communication latency
+  - [ ] Database query performance with assessment data
+  - [ ] Background job processing efficiency
+  - [ ] Memory and resource usage validation
 
-- [ ] **Scalability testing**
-  - [ ] Large document batch processing (100+ documents)
-  - [ ] Multi-tenant load simulation
-  - [ ] Database scaling validation
-  - [ ] Background job queue performance
-  - [ ] Resource usage under high load
-  - [ ] Error rate analysis under stress
-
-### Compliance & Validation Testing
-- [ ] **Educational compliance testing**
-  - [ ] IDEA (Individuals with Disabilities Education Act) compliance
-  - [ ] State-specific special education requirement validation
-  - [ ] IEP content quality standards verification
-  - [ ] Professional practice guidelines adherence
-  - [ ] Accessibility standards compliance (WCAG 2.1)
-
-- [ ] **Security and privacy testing**
-  - [ ] Data encryption validation
-  - [ ] Access control testing
-  - [ ] FERPA compliance verification
-  - [ ] Penetration testing for vulnerabilities
-  - [ ] Data leak prevention testing
-  - [ ] Audit trail completeness validation
-
-**Estimated Effort:** 5-6 days test development + 2-3 days validation + 1-2 days performance optimization
+**Estimated Effort:** 2-3 days (significantly reduced by focusing on core functionality and following existing patterns)
 
 ---
 
-## 🅰️ **REMAINING WORK BREAKDOWN**
+## 🚀 **REVISED WORK BREAKDOWN - ARCHITECTURAL ALIGNMENT**
 
-### 🔄 **IMMEDIATE PRIORITIES** (Stage 2 - Next Up)
-1. **Academic Domain Quantification** - Convert raw scores to standardized metrics
-2. **Behavioral Frequency Matrices** - Transform behavioral observations to quantified data
-3. **Grade Level Conversions** - Implement normative data and composite profiles
-4. **Quantification Engine Core** - Build the main conversion algorithms
+### 🔄 **IMMEDIATE PRIORITIES** (Stage 4 Completion - Architectural Integration)
+1. **Database Consolidation** - Move assessment models to special_education_service
+2. **Service Refactoring** - Convert assessment pipeline to processing-only service
+3. **Authentication Integration** - Connect to existing auth_service infrastructure
+4. **Service Communication** - Implement proper inter-service communication
 
-### 🔄 **MEDIUM TERM** (Stages 3-4)
-5. **Quality Control Systems** - Regurgitation detection, SMART criteria validation
-6. **RAG Content Generation** - Present levels, goals, services, accommodations
-7. **Professional Review Interface** - Side-by-side comparison, approval workflow
-8. **Complete API Router** - All assessment pipeline endpoints
+### 🔄 **MEDIUM TERM** (Stage 5 - Service Integration)
+5. **API Contract Updates** - Remove duplicate endpoints, ensure data consistency
+6. **Processing Endpoints** - Implement processing-only APIs in assessment pipeline
+7. **Data Integration** - Extend special_education_service with assessment capabilities
+8. **Workflow Integration** - Connect assessment processing to existing IEP workflows
 
-### 🔄 **FINAL PHASE** (Production & Testing)
-9. **Infrastructure Setup** - Google Cloud processors, background tasks
-10. **Comprehensive Testing** - Unit tests, integration tests, quality validation
-11. **Performance Monitoring** - Metrics tracking, error analysis
-12. **Documentation & Deployment** - Production setup guides
+### 🔄 **FINAL PHASE** (Infrastructure & Testing)
+9. **Infrastructure Integration** - Extend existing docker-compose, PostgreSQL, Redis
+10. **Testing Alignment** - Follow existing test patterns and infrastructure
+11. **Documentation Updates** - Update existing API documentation
+12. **Deployment Integration** - Integrate into existing deployment pipeline
 
 ---
 
-## 📊 **PROGRESS TRACKING**
+## 📊 **REVISED PROGRESS TRACKING**
 
-### Current Status Summary
-- **Foundation**: ✅ Complete (Service structure, basic models, RAG integration)
-- **Stage 1**: ✅ Complete (Document AI implementation, assessment detection, score extraction, confidence mapping)
-- **Stage 2**: ✅ Complete (Quantification engine with academic/behavioral metrics, grade level conversions)
-- **Stage 3**: ✅ Complete (Quality assurance engine, RAG integration with quality controls)
-- **Stage 4**: 🔄 85% Complete (Professional review interface, collaboration tools, approval workflow)
-- **API Integration**: 🔄 60% (Review routes complete, needs pipeline router)
-- **Infrastructure**: 🔄 10% (Basic setup, needs production config)
-- **Testing**: ❌ 0% (Not started)
+### Current Status Summary (Architectural Alignment)
+- **Architectural Analysis**: ✅ Complete (Service boundaries defined, redundancy identified)
+- **Stage 1**: ✅ Complete (Document AI processing)
+- **Stage 2**: ✅ Complete (Quantification engine)
+- **Stage 3**: ✅ Complete (Quality controls)
+- **Stage 4**: 🔄 85% Complete (Professional review interface + architectural integration needed)
+- **Stage 5**: ❌ 0% Complete (Service integration & API alignment)
+- **Stage 6**: ❌ 0% Complete (Infrastructure integration)
+- **Stage 7**: ❌ 0% Complete (Testing following existing patterns)
 
-### Next Priority Actions
-1. **Complete Stage 4**: Final approval workflow database integration and testing (1 day)
-2. **Stage 5 - Complete API Integration**: Full pipeline router with all endpoints and database models (4-5 days)
-3. **Stage 6 - Infrastructure & Production**: Google Cloud setup, background processing, monitoring (7-9 days)
-4. **Stage 7 - Testing & Validation**: Comprehensive test suite, quality validation, performance testing (8-11 days)
-5. **Final Integration & Deployment**: End-to-end system testing and production deployment (3-4 days)
+### Next Priority Actions (Revised Timeline)
+1. **Complete Stage 4**: Database consolidation and service refactoring (1-2 days)
+2. **Stage 5 - Service Integration**: API alignment and data integration (2-3 days)
+3. **Stage 6 - Infrastructure Integration**: Docker, PostgreSQL, Redis integration (1-2 days)
+4. **Stage 7 - Testing & Validation**: Following existing patterns (2-3 days)
+5. **Documentation & Deployment**: Integration with existing systems (1 day)
 
-### Estimated Completion
-- **Stage 3 (Quality Controls)**: ✅ Complete
-- **Stage 4 (Professional Review Interface)**: 🔄 85% Complete (1 day remaining)
-- **Stage 5 (Complete API Integration)**: 4-5 days (100% remaining)
-- **Stage 6 (Infrastructure & Production)**: 7-9 days (100% remaining)
-- **Stage 7 (Testing & Validation)**: 8-11 days (100% remaining)
-- **Final Integration**: 3-4 days (100% remaining)
-- **Total**: 3-4 weeks for complete production-ready implementation
+### Revised Estimated Completion (Significant Time Savings)
+- **Stage 4 (Architectural Integration)**: 🔄 85% Complete (1-2 days remaining)
+- **Stage 5 (Service Integration)**: 2-3 days (reduced from 4-5 days)
+- **Stage 6 (Infrastructure Integration)**: 1-2 days (reduced from 7-9 days)
+- **Stage 7 (Testing & Validation)**: 2-3 days (reduced from 8-11 days)
+- **Documentation & Deployment**: 1 day (reduced from 3-4 days)
+- **Total**: **7-11 days** for complete production-ready implementation (reduced from 23-29 days)
 
-### Completion Percentages by Stage
+### Revised Completion Percentages by Stage
 - **Stage 1 (Document AI Processing)**: ✅ 100% Complete
 - **Stage 2 (Quantification Engine)**: ✅ 100% Complete
 - **Stage 3 (Quality Controls)**: ✅ 100% Complete
-- **Stage 4 (Professional Review Interface)**: 🔄 85% Complete (15% remaining)
-- **Stage 5 (Complete API Integration)**: ❌ 0% Complete (100% remaining) 
-- **Stage 6 (Infrastructure & Production)**: ❌ 0% Complete (100% remaining)
+- **Stage 4 (Architectural Integration)**: 🔄 85% Complete (15% remaining)
+- **Stage 5 (Service Integration)**: ❌ 0% Complete (100% remaining) 
+- **Stage 6 (Infrastructure Integration)**: ❌ 0% Complete (100% remaining)
 - **Stage 7 (Testing & Validation)**: ❌ 0% Complete (100% remaining)
-- **Overall Pipeline**: 🔄 55% Complete (3.85 of 7 stages complete)
+- **Overall Pipeline**: 🔄 60% Complete (3.85 of 6.5 effective stages complete)
 
 ---
 
-## 📝 **NOTES & DECISIONS**
+## 📝 **ARCHITECTURAL DECISIONS & INTEGRATION POINTS**
 
-### Architecture Decisions Made
-- ✅ Unified with special education service (shared database)
-- ✅ 4-stage pipeline approach maintained
-- ✅ Quality thresholds defined (76-98% confidence, <10% regurgitation)
-- ✅ RAG integration through existing service
+### Critical Architecture Decisions Made
+- ✅ **Service Boundaries Clarified**: Assessment pipeline = processing only, special_education_service = data owner
+- ✅ **Database Consolidation**: Single source of truth in special_education_service (avoid redundancy)
+- ✅ **Infrastructure Reuse**: Leverage existing PostgreSQL, Redis, Auth services
+- ✅ **API Separation**: Processing endpoints vs. data persistence endpoints
+- ✅ **Quality Thresholds Maintained**: 76-98% confidence, <10% regurgitation, 90% SMART compliance
 
-### Key Quality Requirements
+### Key Quality Requirements (Unchanged)
 - **Extraction Confidence**: 76-98% range for Document AI
 - **Regurgitation Limit**: <10% similarity to source documents
 - **SMART Criteria**: 90% compliance (18/20 requirements)
 - **Professional Terminology**: 15+ terms per section
 - **Specificity Score**: 70% threshold (14/20 requirements)
 
-### Integration Points
-- **Vector Store**: Existing ChromaDB integration
+### Integration Points (Revised for Existing Architecture)
+- **Database**: Existing PostgreSQL (:5432) with schema separation
+- **Authentication**: Existing JWT system from auth_service (:8003)
+- **Background Tasks**: Existing Redis (:6379) and job queue system
+- **Vector Store**: Existing ChromaDB integration in special_education_service
 - **LLM Service**: Existing Gemini 2.5 Flash connection
-- **Database**: Shared PostgreSQL/SQLite with special education service
-- **Authentication**: Existing JWT-based auth system
+- **Deployment**: Existing docker-compose.yml infrastructure
+
+### Service Communication Patterns
+- **Assessment Pipeline → Special Education Service**: HTTP API calls for data persistence
+- **Special Education Service → Assessment Pipeline**: Processing requests for document analysis
+- **Auth Service → Both**: JWT token validation and user authentication
+- **ADK Host**: API gateway orchestrating cross-service requests
+
+### Time Savings Achieved
+- **66% Reduction**: From 23-29 days to 7-11 days total implementation time
+- **Infrastructure Reuse**: Eliminated 5-7 days of infrastructure setup
+- **Database Consolidation**: Eliminated 2-3 days of redundant model development
+- **Pattern Following**: Reduced testing and deployment time by 4-6 days
+
+---
+
+## 🎯 **CONCLUSION**
+
+The revised assessment pipeline tracker now reflects proper architectural alignment with the existing TLA Educational Platform. The microservices approach maintains clear service boundaries while eliminating redundancy and leveraging existing infrastructure investments. This approach reduces implementation time by approximately **66%** while ensuring a more maintainable and scalable system architecture.
