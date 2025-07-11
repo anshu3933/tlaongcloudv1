@@ -494,7 +494,7 @@ async def get_admin_dashboard(
         )
 
 # Health check endpoint with observability
-@router.get("/health")
+@router.get("/health", response_model=Dict[str, Any])
 async def dashboard_health_check():
     """Health check for dashboard BFF endpoints"""
     return {

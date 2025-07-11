@@ -7,6 +7,7 @@ from .dashboard_router import router as dashboard_router
 from .observability_router import router as observability_router
 from .monitoring_router import router as monitoring_router
 from .async_jobs import router as async_jobs_router
+from .assessment_router import router as assessment_router
 
 __all__ = [
     'student_router', 
@@ -15,5 +16,6 @@ __all__ = [
     'dashboard_router',
     'observability_router',
     'monitoring_router',
-    'async_jobs_router'
+    'async_jobs_router',
+    'assessment_router'
 ]

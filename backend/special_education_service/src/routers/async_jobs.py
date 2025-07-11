@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/jobs", tags=["Async Jobs"])
 
 
-@router.post("/iep-generation", response_class=None)
+@router.post("/iep-generation", response_model=Dict[str, Any])
 async def submit_iep_generation_job(
     job_request: IEPGenerationRequest,
     request: Request,
@@ -51,7 +51,7 @@ async def submit_iep_generation_job(
         raise HTTPException(status_code=500, detail="Failed to submit job")
 
 
-@router.post("/section-generation", response_class=None)
+@router.post("/section-generation", response_model=Dict[str, Any])
 async def submit_section_generation_job(
     job_request: SectionGenerationRequest,
     request: Request,
@@ -80,7 +80,7 @@ async def submit_section_generation_job(
         raise HTTPException(status_code=500, detail="Failed to submit job")
 
 
-@router.get("/{job_id}", response_class=None)
+@router.get("/{job_id}", response_model=Dict[str, Any])
 async def get_job_status(
     job_id: str,
     request: Request,

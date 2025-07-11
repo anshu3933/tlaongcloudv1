@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/observability", tags=["Observability"])
 settings = get_settings()
 
-@router.get("/health")
+@router.get("/health", response_model=Dict[str, Any])
 async def basic_health_check():
     """Basic health check endpoint"""
     return {
@@ -29,7 +29,7 @@ async def basic_health_check():
         "version": "1.0.0"
     }
 
-@router.get("/health/detailed")
+@router.get("/health/detailed", response_model=Dict[str, Any])
 async def detailed_health_check(db: AsyncSession = Depends(get_db)):
     """
     Detailed health check with dependency status and system metrics
@@ -121,7 +121,7 @@ async def detailed_health_check(db: AsyncSession = Depends(get_db)):
             detail=error_response
         )
 
-@router.get("/metrics")
+@router.get("/metrics", response_model=Dict[str, Any])
 async def get_metrics():
     """
     Prometheus-style metrics endpoint for monitoring
@@ -161,7 +161,7 @@ async def get_metrics():
             detail=f"Failed to collect metrics: {str(e)}"
         )
 
-@router.get("/info")
+@router.get("/info", response_model=Dict[str, Any])
 async def get_service_info():
     """
     Service information endpoint
@@ -196,7 +196,7 @@ async def get_service_info():
         "timestamp": datetime.now().isoformat()
     }
 
-@router.post("/logs")
+@router.post("/logs", response_model=Dict[str, Any])
 async def get_recent_logs(lines: int = 100):
     """
     Get recent application logs (if log file exists)

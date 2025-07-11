@@ -11,7 +11,6 @@ from enum import Enum
 import difflib
 from dataclasses import dataclass, asdict
 
-from assessment_pipeline_service.models.assessment_models import QuantifiedAssessmentData
 from assessment_pipeline_service.src.quality_assurance import QualityAssuranceEngine
 
 logger = logging.getLogger(__name__)

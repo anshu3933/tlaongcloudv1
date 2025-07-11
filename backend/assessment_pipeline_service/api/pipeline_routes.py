@@ -7,13 +7,16 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from assessment_pipeline_service.src.pipeline_orchestrator import AssessmentPipelineOrchestrator
 from assessment_pipeline_service.schemas.assessment_schemas import (
     AssessmentUploadDTO, QuantifiedMetricsDTO
 )
-from assessment_pipeline_service.api.assessment_routes import get_db_session
+from assessment_pipeline_service.src.service_clients import special_education_client
+from assessment_pipeline_service.src.auth_middleware import (
+    get_current_user, require_teacher_or_above, require_coordinator_or_above,
+    require_self_or_admin_access
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +29,7 @@ orchestrator = AssessmentPipelineOrchestrator()
 async def execute_complete_pipeline(
     request: Dict[str, Any],
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db_session)
+    current_user: Dict[str, Any] = Depends(require_teacher_or_above())
 ):
     """Execute the complete assessment pipeline from documents to IEP"""
     
@@ -43,7 +46,7 @@ async def execute_complete_pipeline(
         if not assessment_documents:
             raise HTTPException(status_code=400, detail="assessment_documents are required")
         
-        logger.info(f"Starting complete pipeline for student {student_id}")
+        logger.info(f"Starting complete pipeline for student {student_id} by user {current_user.get('sub', 'unknown')}")
         
         # Convert documents to DTOs
         document_dtos = [
@@ -84,7 +87,7 @@ async def execute_complete_pipeline(
 @router.post("/execute-partial", response_model=dict)
 async def execute_partial_pipeline(
     request: Dict[str, Any],
-    db: AsyncSession = Depends(get_db_session)
+    current_user: Dict[str, Any] = Depends(require_teacher_or_above())
 ):
     """Execute a partial pipeline (specific stages only)"""
     
@@ -100,7 +103,7 @@ async def execute_partial_pipeline(
                 detail="student_id, start_stage, and end_stage are required"
             )
         
-        logger.info(f"Starting partial pipeline for student {student_id}: {start_stage} to {end_stage}")
+        logger.info(f"Starting partial pipeline for student {student_id}: {start_stage} to {end_stage} by user {current_user.get('sub', 'unknown')}")
         
         result = await orchestrator.execute_partial_pipeline(
             student_id=student_id,
@@ -120,7 +123,10 @@ async def execute_partial_pipeline(
         raise HTTPException(status_code=500, detail=f"Partial pipeline execution failed: {str(e)}")
 
 @router.get("/status/{pipeline_id}", response_model=dict)
-async def get_pipeline_status(pipeline_id: str):
+async def get_pipeline_status(
+    pipeline_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
     """Get current status of a pipeline run"""
     
     try:
@@ -137,7 +143,7 @@ async def get_pipeline_status(pipeline_id: str):
 @router.post("/validate-inputs", response_model=dict)
 async def validate_pipeline_inputs(
     request: Dict[str, Any],
-    db: AsyncSession = Depends(get_db_session)
+    current_user: Dict[str, Any] = Depends(require_teacher_or_above())
 ):
     """Validate inputs before starting pipeline"""
     

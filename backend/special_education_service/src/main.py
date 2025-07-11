@@ -7,12 +7,12 @@ import logging
 from .database import create_tables, init_database, check_database_connection
 from .routers import (
     iep_router, student_router, template_router, dashboard_router, 
-    observability_router, monitoring_router, async_jobs_router
+    observability_router, monitoring_router, async_jobs_router, assessment_router
 )
-from .middleware.error_handler import ErrorHandlerMiddleware, add_request_id_middleware
-from .middleware.session_middleware import RequestScopedSessionMiddleware
-from .monitoring.middleware import MonitoringMiddleware
-from .monitoring.health_monitor import health_monitor
+# from .middleware.error_handler import ErrorHandlerMiddleware, add_request_id_middleware
+# from .middleware.session_middleware import RequestScopedSessionMiddleware
+# from .monitoring.middleware import MonitoringMiddleware
+# from .monitoring.health_monitor import health_monitor
 from common.src.config import get_settings
 
 # Configure logging
@@ -21,47 +21,47 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan manager"""
-    logger.info("Starting Special Education Service...")
-    
-    # Check database connection
-    if not await check_database_connection():
-        logger.error("Failed to connect to database")
-        raise RuntimeError("Database connection failed")
-    
-    # Create tables
-    await create_tables()
-    
-    # Initialize with default data
-    await init_database()
-    
-    # Start health monitoring
-    await health_monitor.start()
-    logger.info("Health monitoring started")
-    
-    logger.info("Special Education Service started successfully")
-    yield
-    
-    logger.info("Shutting down Special Education Service...")
-    
-    # Stop health monitoring
-    await health_monitor.stop()
-    logger.info("Health monitoring stopped")
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     """Application lifespan manager"""
+#     logger.info("Starting Special Education Service...")
+#     
+#     # Check database connection
+#     if not await check_database_connection():
+#         logger.error("Failed to connect to database")
+#         raise RuntimeError("Database connection failed")
+#     
+#     # Create tables
+#     await create_tables()
+#     
+#     # Initialize with default data
+#     await init_database()
+#     
+#     # Start health monitoring
+#     await health_monitor.start()
+#     logger.info("Health monitoring started")
+#     
+#     logger.info("Special Education Service started successfully")
+#     yield
+#     
+#     logger.info("Shutting down Special Education Service...")
+#     
+#     # Stop health monitoring
+#     await health_monitor.stop()
+#     logger.info("Health monitoring stopped")
 
 app = FastAPI(
     title="Special Education Service",
     version="1.0.0",
-    description="Service for managing IEPs, assessments, and special education workflows",
-    lifespan=lifespan
+    description="Service for managing IEPs, assessments, and special education workflows"
+    # lifespan=lifespan
 )
 
 # Add middleware (order matters - session middleware should be early)
-app.add_middleware(MonitoringMiddleware)  # Monitor all requests
-app.add_middleware(RequestScopedSessionMiddleware)
-app.middleware("http")(add_request_id_middleware)
-app.add_middleware(ErrorHandlerMiddleware)
+# app.add_middleware(MonitoringMiddleware)  # Monitor all requests
+# app.add_middleware(RequestScopedSessionMiddleware)
+# app.middleware("http")(add_request_id_middleware)
+# app.add_middleware(ErrorHandlerMiddleware)
 
 # Configure CORS
 cors_origins = settings.cors_origins if hasattr(settings, 'cors_origins') else ["*"]
@@ -79,18 +79,21 @@ app.add_middleware(
 
 # Include routers
 app.include_router(iep_router)
-app.include_router(student_router)
+app.include_router(student_router)  
 app.include_router(template_router)
-app.include_router(dashboard_router)
-app.include_router(observability_router)
-app.include_router(monitoring_router)
-app.include_router(async_jobs_router)
+app.include_router(dashboard_router)  
+app.include_router(observability_router)  # Fixed response_model issues
+app.include_router(monitoring_router)  # Fixed response_model issues
+app.include_router(async_jobs_router)   # Fixed response_model issues
+app.include_router(assessment_router)
 
 # Include advanced features
-from .routers import advanced_iep_router
-app.include_router(advanced_iep_router.router)
+# from .routers import advanced_iep_router  # Temporarily disabled for debugging
+# app.include_router(advanced_iep_router.router)  # Temporarily disabled for debugging
 
-@app.get("/health")
+from typing import Dict, Any
+
+@app.get("/health", response_model=Dict[str, Any])
 async def health_check():
     """Health check endpoint with database connectivity test"""
     try:
@@ -107,7 +110,7 @@ async def health_check():
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=503, detail="Service unhealthy")
 
-@app.get("/")
+@app.get("/", response_model=Dict[str, Any])
 async def root():
     """Root endpoint with service information"""
     return {

@@ -73,7 +73,7 @@ async def get_iep_service(request: Request) -> IEPService:
         audit_client=audit_client
     )
 
-@router.post("/create-with-rag")
+@router.post("/create-with-rag", response_model=Dict[str, Any])
 async def create_iep_with_rag(
     iep_data: IEPCreateWithRAG,
     request: Request,
@@ -409,7 +409,7 @@ async def find_similar_ieps(
         )
 
 
-@router.get("/async-job/{job_id}")
+@router.get("/async-job/{job_id}", response_model=Dict[str, Any])
 async def get_async_iep_job_status(
     job_id: str,
     request: Request,
@@ -463,7 +463,7 @@ async def get_async_iep_job_status(
             detail="Failed to get job status"
         )
 
-@router.get("/health/flattener")
+@router.get("/health/flattener", response_model=Dict[str, Any])
 async def get_flattener_health():
     """Get flattener health status and statistics"""
     try:

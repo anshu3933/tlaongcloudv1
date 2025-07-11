@@ -8,9 +8,9 @@ from datetime import datetime
 from uuid import UUID
 import httpx
 
-from assessment_pipeline_service.models.assessment_models import QuantifiedAssessmentData
 from assessment_pipeline_service.schemas.assessment_schemas import QuantifiedMetricsDTO
 from assessment_pipeline_service.src.quality_assurance import QualityAssuranceEngine
+from .service_clients import special_education_client
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class RAGIntegrationService:
     async def create_rag_enhanced_iep_with_quality_controls(
         self,
         student_id: str,
-        quantified_data: QuantifiedAssessmentData,
+        quantified_data: Dict[str, Any],
         template_id: Optional[str] = None,
         academic_year: str = "2025-2026",
         apply_quality_gates: bool = True
@@ -314,7 +314,7 @@ class RAGIntegrationService:
     async def _validate_iep_quality(
         self, 
         iep_result: Dict[str, Any], 
-        quantified_data: QuantifiedAssessmentData,
+        quantified_data: Dict[str, Any],
         rag_context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Apply comprehensive quality validation to generated IEP content"""

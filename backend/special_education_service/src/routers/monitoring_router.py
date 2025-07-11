@@ -32,7 +32,7 @@ async def get_monitoring_dashboard():
         raise HTTPException(status_code=500, detail="Failed to load monitoring dashboard")
 
 
-@router.get("/health")
+@router.get("/health", response_model=Dict[str, Any])
 async def get_health_status():
     """Get current system health status"""
     try:
@@ -42,7 +42,7 @@ async def get_health_status():
         raise HTTPException(status_code=500, detail="Failed to retrieve health status")
 
 
-@router.get("/health/simple")
+@router.get("/health/simple", response_model=Dict[str, Any])
 async def get_simple_health():
     """Simple health check endpoint"""
     try:
@@ -61,7 +61,7 @@ async def get_simple_health():
         }
 
 
-@router.get("/metrics")
+@router.get("/metrics", response_model=Dict[str, Any])
 async def get_metrics():
     """Get comprehensive metrics dashboard"""
     try:
@@ -71,7 +71,7 @@ async def get_metrics():
         raise HTTPException(status_code=500, detail="Failed to retrieve metrics")
 
 
-@router.get("/metrics/conflicts")
+@router.get("/metrics/conflicts", response_model=Dict[str, Any])
 async def get_conflict_metrics(
     hours: int = Query(default=1, ge=1, le=168, description="Time period in hours (1-168)")
 ):
@@ -83,7 +83,7 @@ async def get_conflict_metrics(
         raise HTTPException(status_code=500, detail="Failed to retrieve conflict metrics")
 
 
-@router.get("/metrics/performance")
+@router.get("/metrics/performance", response_model=Dict[str, Any])
 async def get_performance_metrics(
     hours: int = Query(default=1, ge=1, le=168, description="Time period in hours (1-168)")
 ):
@@ -95,7 +95,7 @@ async def get_performance_metrics(
         raise HTTPException(status_code=500, detail="Failed to retrieve performance metrics")
 
 
-@router.get("/alerts")
+@router.get("/alerts", response_model=Dict[str, Any])
 async def get_alerts():
     """Get current system alerts"""
     try:
@@ -110,7 +110,7 @@ async def get_alerts():
         raise HTTPException(status_code=500, detail="Failed to retrieve alerts")
 
 
-@router.get("/status")
+@router.get("/status", response_model=Dict[str, Any])
 async def get_monitoring_status():
     """Get monitoring system status and statistics"""
     try:
@@ -135,7 +135,7 @@ async def get_monitoring_status():
         raise HTTPException(status_code=500, detail="Failed to retrieve monitoring status")
 
 
-@router.post("/cleanup")
+@router.post("/cleanup", response_model=Dict[str, Any])
 async def cleanup_old_data():
     """Manually trigger cleanup of old monitoring data"""
     try:
@@ -149,7 +149,7 @@ async def cleanup_old_data():
         raise HTTPException(status_code=500, detail="Failed to cleanup old data")
 
 
-@router.get("/database/health")
+@router.get("/database/health", response_model=Dict[str, Any])
 async def get_database_health():
     """Get database health status"""
     try:
@@ -159,7 +159,7 @@ async def get_database_health():
         raise HTTPException(status_code=500, detail="Failed to retrieve database health")
 
 
-@router.get("/summary/hourly")
+@router.get("/summary/hourly", response_model=Dict[str, Any])
 async def get_hourly_summary():
     """Get hourly summary statistics"""
     try:
@@ -172,7 +172,7 @@ async def get_hourly_summary():
         raise HTTPException(status_code=500, detail="Failed to retrieve hourly summary")
 
 
-@router.get("/conflicts/recent")
+@router.get("/conflicts/recent", response_model=Dict[str, Any])
 async def get_recent_conflicts(
     limit: int = Query(default=10, ge=1, le=100, description="Number of recent conflicts to return")
 ):
@@ -200,7 +200,7 @@ async def get_recent_conflicts(
         raise HTTPException(status_code=500, detail="Failed to retrieve recent conflicts")
 
 
-@router.get("/performance/slowest")
+@router.get("/performance/slowest", response_model=Dict[str, Any])
 async def get_slowest_operations(
     limit: int = Query(default=10, ge=1, le=100, description="Number of slowest operations to return")
 ):

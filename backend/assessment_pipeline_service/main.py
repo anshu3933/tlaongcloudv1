@@ -97,27 +97,40 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
-# Health check endpoint
-@app.get("/health")
+# Health check endpoint (no auth required)
+@app.get("/health", response_model=dict)
 async def health_check():
-    """Service health check"""
+    """Service health check - publicly accessible"""
     
     try:
         # Check database connection
         from special_education_service.src.database import check_database_connection
         db_healthy = await check_database_connection()
         
+        # Check auth service connection
+        from assessment_pipeline_service.src.service_clients import auth_client
+        auth_health = await auth_client.health_check()
+        auth_healthy = auth_health.get("healthy", False)
+        
+        overall_healthy = db_healthy and auth_healthy
+        
         return {
-            "status": "healthy" if db_healthy else "unhealthy",
+            "status": "healthy" if overall_healthy else "unhealthy",
             "service": "assessment_pipeline_service",
             "version": "2.0.0",
             "timestamp": datetime.utcnow().isoformat(),
             "database": "connected" if db_healthy else "disconnected",
+            "auth_service": "connected" if auth_healthy else "disconnected",
             "components": {
                 "document_ai": "available",
                 "data_mapper": "active",
                 "quantification_engine": "active",
-                "assessment_intake": "active"
+                "assessment_intake": "active",
+                "jwt_authentication": "connected" if auth_healthy else "disconnected"
+            },
+            "dependencies": {
+                "special_education_service": "connected" if db_healthy else "disconnected",
+                "auth_service": auth_health
             }
         }
     except Exception as e:
@@ -147,10 +160,10 @@ try:
 except ImportError as e:
     logger.warning(f"Pipeline routes not available: {e}")
 
-# Root endpoint
-@app.get("/")
+# Root endpoint (no auth required)
+@app.get("/", response_model=dict)
 async def root():
-    """Service information"""
+    """Service information - publicly accessible"""
     return {
         "service": "Assessment Pipeline Service",
         "version": "2.0.0",

@@ -6,104 +6,101 @@ from datetime import datetime
 from uuid import UUID
 import json
 
-from assessment_pipeline_service.schemas.assessment_schemas import (
+from ..schemas.assessment_schemas import (
     AssessmentUploadDTO, PsychoedScoreDTO, ExtractedDataDTO,
     QuantifiedMetricsDTO, CognitiveProfileDTO, AcademicProfileDTO,
     BehavioralProfileDTO, AssessmentSummaryDTO
 )
-from assessment_pipeline_service.schemas.pipeline_schemas import (
+from ..schemas.pipeline_schemas import (
     PipelineStatusResponseDTO, AssessmentPipelineResponseDTO,
     IntakeResultDTO, QuantificationResultDTO, GenerationResultDTO,
     IEPSectionDTO, GeneratedIEPDTO
 )
-from assessment_pipeline_service.models.assessment_models import (
-    AssessmentDocument, PsychoedScore, ExtractedAssessmentData,
-    CognitiveProfile, AcademicProfile, BehavioralProfile,
-    QuantifiedAssessmentData, AssessmentPipeline
-)
+# Database models have been consolidated into special_education_service
+# This mapper now works with dictionaries for service-to-service communication
 
 class DataMapper:
     """Maps between frontend DTOs and backend database models"""
     
     @staticmethod
-    def upload_dto_to_document(dto: AssessmentUploadDTO) -> AssessmentDocument:
-        """Convert upload DTO to database model"""
+    def upload_dto_to_dict(dto: AssessmentUploadDTO) -> Dict[str, Any]:
+        """Convert upload DTO to dictionary for service communication"""
         
-        return AssessmentDocument(
-            student_id=dto.student_id,
-            document_type=dto.document_type,
-            file_name=dto.file_name,
-            file_path=dto.file_path or f"/tmp/{dto.file_name}",  # Temporary path
-            assessment_date=dto.assessment_date,
-            assessor_name=dto.assessor_name,
-            assessor_title=dto.assessor_title,
-            referral_reason=dto.referral_reason
-        )
+        return {
+            "student_id": str(dto.student_id),
+            "document_type": dto.document_type.value if hasattr(dto.document_type, 'value') else str(dto.document_type),
+            "file_name": dto.file_name,
+            "file_path": dto.file_path or f"/tmp/{dto.file_name}",
+            "assessment_date": dto.assessment_date.isoformat() if dto.assessment_date else None,
+            "assessor_name": dto.assessor_name,
+            "assessor_title": dto.assessor_title,
+            "referral_reason": dto.referral_reason,
+            "processing_status": "pending"
+        }
     
     @staticmethod
-    def score_dto_to_model(dto: PsychoedScoreDTO, document_id: UUID, student_id: UUID) -> PsychoedScore:
-        """Convert score DTO to database model"""
+    def score_dto_to_dict(dto: PsychoedScoreDTO, document_id: UUID) -> Dict[str, Any]:
+        """Convert score DTO to dictionary for service communication"""
         
-        model = PsychoedScore(
-            document_id=document_id,
-            student_id=student_id,
-            test_name=dto.test_name,
-            test_version=dto.test_version,
-            subtest_name=dto.subtest_name,
-            raw_score=dto.raw_score,
-            standard_score=dto.standard_score,
-            scaled_score=dto.scaled_score,
-            t_score=dto.t_score,
-            percentile_rank=dto.percentile_rank,
-            age_equivalent_years=dto.age_equivalent_years,
-            age_equivalent_months=dto.age_equivalent_months,
-            grade_equivalent=dto.grade_equivalent,
-            qualitative_descriptor=dto.qualitative_descriptor,
-            score_classification=dto.score_classification,
-            extraction_confidence=dto.extraction_confidence
-        )
+        score_dict = {
+            "document_id": str(document_id),
+            "test_name": dto.test_name,
+            "test_version": dto.test_version,
+            "subtest_name": dto.subtest_name,
+            "raw_score": dto.raw_score,
+            "standard_score": dto.standard_score,
+            "scaled_score": dto.scaled_score,
+            "t_score": dto.t_score,
+            "percentile_rank": dto.percentile_rank,
+            "age_equivalent_years": dto.age_equivalent_years,
+            "age_equivalent_months": dto.age_equivalent_months,
+            "grade_equivalent": dto.grade_equivalent,
+            "qualitative_descriptor": dto.qualitative_descriptor,
+            "score_classification": dto.score_classification,
+            "extraction_confidence": dto.extraction_confidence,
+            "confidence_level": dto.confidence_level or 95
+        }
         
         # Handle confidence interval
         if dto.confidence_interval:
-            model.confidence_interval_lower = dto.confidence_interval[0]
-            model.confidence_interval_upper = dto.confidence_interval[1]
-            model.confidence_level = dto.confidence_level or 95
+            score_dict["confidence_interval_lower"] = dto.confidence_interval[0]
+            score_dict["confidence_interval_upper"] = dto.confidence_interval[1]
         
-        return model
+        return score_dict
     
     @staticmethod
-    def model_to_score_dto(model: PsychoedScore) -> PsychoedScoreDTO:
-        """Convert database model to score DTO"""
+    def dict_to_score_dto(score_dict: Dict[str, Any]) -> PsychoedScoreDTO:
+        """Convert dictionary from service to score DTO"""
         
         confidence_interval = None
-        if model.confidence_interval_lower and model.confidence_interval_upper:
-            confidence_interval = (model.confidence_interval_lower, model.confidence_interval_upper)
+        if score_dict.get("confidence_interval_lower") and score_dict.get("confidence_interval_upper"):
+            confidence_interval = (score_dict["confidence_interval_lower"], score_dict["confidence_interval_upper"])
         
         return PsychoedScoreDTO(
-            test_name=model.test_name,
-            test_version=model.test_version,
-            subtest_name=model.subtest_name,
-            raw_score=model.raw_score,
-            standard_score=model.standard_score,
-            scaled_score=model.scaled_score,
-            t_score=model.t_score,
-            percentile_rank=model.percentile_rank,
-            age_equivalent_years=model.age_equivalent_years,
-            age_equivalent_months=model.age_equivalent_months,
-            grade_equivalent=model.grade_equivalent,
+            test_name=score_dict.get("test_name"),
+            test_version=score_dict.get("test_version"),
+            subtest_name=score_dict.get("subtest_name"),
+            raw_score=score_dict.get("raw_score"),
+            standard_score=score_dict.get("standard_score"),
+            scaled_score=score_dict.get("scaled_score"),
+            t_score=score_dict.get("t_score"),
+            percentile_rank=score_dict.get("percentile_rank"),
+            age_equivalent_years=score_dict.get("age_equivalent_years"),
+            age_equivalent_months=score_dict.get("age_equivalent_months"),
+            grade_equivalent=score_dict.get("grade_equivalent"),
             confidence_interval=confidence_interval,
-            confidence_level=model.confidence_level,
-            qualitative_descriptor=model.qualitative_descriptor,
-            score_classification=model.score_classification,
-            extraction_confidence=model.extraction_confidence
+            confidence_level=score_dict.get("confidence_level"),
+            qualitative_descriptor=score_dict.get("qualitative_descriptor"),
+            score_classification=score_dict.get("score_classification"),
+            extraction_confidence=score_dict.get("extraction_confidence")
         )
     
     @staticmethod
-    def extracted_data_to_model(
+    def extracted_data_dto_to_dict(
         dto: ExtractedDataDTO,
-        document_id: UUID
-    ) -> ExtractedAssessmentData:
-        """Convert extracted data DTO to model"""
+        document_id: str
+    ) -> Dict[str, Any]:
+        """Convert extracted data DTO to dictionary for persistence"""
         
         # Prepare cognitive data
         cognitive_data = {
@@ -123,154 +120,158 @@ class DataMapper:
             "observations": dto.behavioral_observations
         }
         
-        return ExtractedAssessmentData(
-            document_id=document_id,
-            extraction_date=dto.extraction_date,
-            cognitive_data=cognitive_data,
-            academic_data=academic_data,
-            behavioral_data=behavioral_data,
-            present_levels=dto.present_levels,
-            strengths=dto.strengths,
-            needs=dto.needs,
-            recommendations=dto.recommendations,
-            accommodations=dto.accommodations,
-            extraction_confidence=dto.extraction_confidence,
-            completeness_score=dto.completeness_score,
-            manual_review_required=dto.manual_review_required
-        )
+        return {
+            "document_id": document_id,
+            "extraction_date": dto.extraction_date.isoformat() if dto.extraction_date else None,
+            "cognitive_data": cognitive_data,
+            "academic_data": academic_data,
+            "behavioral_data": behavioral_data,
+            "present_levels": dto.present_levels,
+            "strengths": dto.strengths,
+            "needs": dto.needs,
+            "recommendations": dto.recommendations,
+            "accommodations": dto.accommodations,
+            "extraction_confidence": dto.extraction_confidence,
+            "completeness_score": dto.completeness_score,
+            "manual_review_required": dto.manual_review_required
+        }
     
     @staticmethod
-    def cognitive_profile_to_dto(model: CognitiveProfile) -> CognitiveProfileDTO:
-        """Convert cognitive profile model to DTO"""
+    def cognitive_profile_dict_to_dto(data_dict: Dict[str, Any]) -> CognitiveProfileDTO:
+        """Convert cognitive profile dictionary to DTO"""
         
         return CognitiveProfileDTO(
-            assessment_date=model.assessment_date,
-            full_scale_iq=model.full_scale_iq,
-            verbal_comprehension_index=model.verbal_comprehension_index,
-            visual_spatial_index=model.visual_spatial_index,
-            fluid_reasoning_index=model.fluid_reasoning_index,
-            working_memory_index=model.working_memory_index,
-            processing_speed_index=model.processing_speed_index,
-            general_ability_index=model.general_ability_index,
-            cognitive_proficiency_index=model.cognitive_proficiency_index,
-            cognitive_strengths=model.cognitive_strengths or [],
-            cognitive_weaknesses=model.cognitive_weaknesses or [],
-            processing_patterns=model.psw_analysis or {},
-            composite_confidence=model.composite_confidence or 0.85
+            assessment_date=data_dict.get("assessment_date"),
+            full_scale_iq=data_dict.get("full_scale_iq"),
+            verbal_comprehension_index=data_dict.get("verbal_comprehension_index"),
+            visual_spatial_index=data_dict.get("visual_spatial_index"),
+            fluid_reasoning_index=data_dict.get("fluid_reasoning_index"),
+            working_memory_index=data_dict.get("working_memory_index"),
+            processing_speed_index=data_dict.get("processing_speed_index"),
+            general_ability_index=data_dict.get("general_ability_index"),
+            cognitive_proficiency_index=data_dict.get("cognitive_proficiency_index"),
+            cognitive_strengths=data_dict.get("cognitive_strengths", []),
+            cognitive_weaknesses=data_dict.get("cognitive_weaknesses", []),
+            processing_patterns=data_dict.get("psw_analysis", {}),
+            composite_confidence=data_dict.get("composite_confidence", 0.85)
         )
     
     @staticmethod
-    def academic_profile_to_dto(model: AcademicProfile) -> AcademicProfileDTO:
-        """Convert academic profile model to DTO"""
+    def academic_profile_dict_to_dto(data_dict: Dict[str, Any]) -> AcademicProfileDTO:
+        """Convert academic profile dictionary to DTO"""
         
         return AcademicProfileDTO(
-            assessment_date=model.assessment_date,
-            basic_reading_skills=model.basic_reading_skills,
-            reading_comprehension=model.reading_comprehension,
-            reading_fluency=model.reading_fluency,
-            reading_rate_wpm=model.reading_rate,
-            math_calculation=model.math_calculation,
-            math_problem_solving=model.math_problem_solving,
-            math_fluency=model.math_fluency,
-            written_expression=model.written_expression,
-            spelling=model.spelling,
-            writing_fluency=model.writing_fluency,
-            academic_strengths=model.academic_strengths or [],
-            academic_needs=model.academic_needs or [],
-            error_patterns=model.error_patterns or {}
+            assessment_date=data_dict.get("assessment_date"),
+            basic_reading_skills=data_dict.get("basic_reading_skills"),
+            reading_comprehension=data_dict.get("reading_comprehension"),
+            reading_fluency=data_dict.get("reading_fluency"),
+            reading_rate_wpm=data_dict.get("reading_rate"),
+            math_calculation=data_dict.get("math_calculation"),
+            math_problem_solving=data_dict.get("math_problem_solving"),
+            math_fluency=data_dict.get("math_fluency"),
+            written_expression=data_dict.get("written_expression"),
+            spelling=data_dict.get("spelling"),
+            writing_fluency=data_dict.get("writing_fluency"),
+            academic_strengths=data_dict.get("academic_strengths", []),
+            academic_needs=data_dict.get("academic_needs", []),
+            error_patterns=data_dict.get("error_patterns", {})
         )
     
     @staticmethod
-    def behavioral_profile_to_dto(model: BehavioralProfile) -> BehavioralProfileDTO:
-        """Convert behavioral profile model to DTO"""
+    def behavioral_profile_dict_to_dto(data_dict: Dict[str, Any]) -> BehavioralProfileDTO:
+        """Convert behavioral profile dictionary to DTO"""
         
         # Extract executive function scores
         executive_scores = {
-            "inhibit": model.inhibit,
-            "shift": model.shift,
-            "emotional_control": model.emotional_control,
-            "working_memory": model.working_memory_behavior,
-            "plan_organize": model.plan_organize
+            "inhibit": data_dict.get("inhibit"),
+            "shift": data_dict.get("shift"),
+            "emotional_control": data_dict.get("emotional_control"),
+            "working_memory": data_dict.get("working_memory_behavior"),
+            "plan_organize": data_dict.get("plan_organize")
         }
         
         # Remove None values
         executive_scores = {k: v for k, v in executive_scores.items() if v is not None}
         
         return BehavioralProfileDTO(
-            assessment_date=model.assessment_date,
-            externalizing_problems=model.externalizing_problems,
-            internalizing_problems=model.internalizing_problems,
-            behavioral_symptoms_index=model.behavioral_symptoms_index,
-            adaptive_skills_composite=model.adaptive_skills_composite,
-            hyperactivity=model.hyperactivity,
-            aggression=model.aggression,
-            anxiety=model.anxiety,
-            depression=model.depression,
-            attention_problems=model.attention_problems,
+            assessment_date=data_dict.get("assessment_date"),
+            externalizing_problems=data_dict.get("externalizing_problems"),
+            internalizing_problems=data_dict.get("internalizing_problems"),
+            behavioral_symptoms_index=data_dict.get("behavioral_symptoms_index"),
+            adaptive_skills_composite=data_dict.get("adaptive_skills_composite"),
+            hyperactivity=data_dict.get("hyperactivity"),
+            aggression=data_dict.get("aggression"),
+            anxiety=data_dict.get("anxiety"),
+            depression=data_dict.get("depression"),
+            attention_problems=data_dict.get("attention_problems"),
             executive_function_scores=executive_scores,
-            behavior_frequency_data=model.behavior_frequency_data or [],
-            antecedent_patterns=model.antecedent_data or [],
+            behavior_frequency_data=data_dict.get("behavior_frequency_data", []),
+            antecedent_patterns=data_dict.get("antecedent_data", []),
             effective_interventions=[]  # Would be derived from analysis
         )
     
     @staticmethod
-    def quantified_data_to_metrics_dto(model: QuantifiedAssessmentData) -> QuantifiedMetricsDTO:
-        """Convert quantified assessment data to metrics DTO"""
+    def quantified_data_dict_to_metrics_dto(data_dict: Dict[str, Any]) -> QuantifiedMetricsDTO:
+        """Convert quantified assessment data dictionary to metrics DTO"""
         
         # Extract reading metrics
         reading_metrics = {
-            "composite_score": model.reading_composite,
-            "growth_rate": model.growth_rate.get("reading", 0) if model.growth_rate else 0
+            "composite_score": data_dict.get("reading_composite"),
+            "growth_rate": data_dict.get("growth_rate", {}).get("reading", 0) if data_dict.get("growth_rate") else 0
         }
         
         # Extract math metrics
         math_metrics = {
-            "composite_score": model.math_composite,
-            "growth_rate": model.growth_rate.get("math", 0) if model.growth_rate else 0
+            "composite_score": data_dict.get("math_composite"),
+            "growth_rate": data_dict.get("growth_rate", {}).get("math", 0) if data_dict.get("growth_rate") else 0
         }
         
         # Extract writing metrics
         writing_metrics = {
-            "composite_score": model.writing_composite,
-            "growth_rate": model.growth_rate.get("writing", 0) if model.growth_rate else 0
+            "composite_score": data_dict.get("writing_composite"),
+            "growth_rate": data_dict.get("growth_rate", {}).get("writing", 0) if data_dict.get("growth_rate") else 0
         }
         
         # Extract cognitive indices
-        cognitive_indices = model.cognitive_processing_profile or {}
+        cognitive_indices = data_dict.get("cognitive_processing_profile", {})
         
         # Extract behavioral metrics
         attention_metrics = {
-            "composite": model.behavioral_composite,
-            "executive_function": model.executive_composite
+            "composite": data_dict.get("behavioral_composite"),
+            "executive_function": data_dict.get("executive_composite")
         }
         
         social_emotional_metrics = {
-            "composite": model.social_emotional_composite,
-            "adaptive": model.adaptive_composite
+            "composite": data_dict.get("social_emotional_composite"),
+            "adaptive": data_dict.get("adaptive_composite")
         }
+        
+        standardized_plop = data_dict.get("standardized_plop", {})
+        learning_style_profile = data_dict.get("learning_style_profile", {})
         
         return QuantifiedMetricsDTO(
             reading_metrics=reading_metrics,
             math_metrics=math_metrics,
             writing_metrics=writing_metrics,
             cognitive_indices=cognitive_indices,
-            processing_strengths=model.standardized_plop.get("strengths", []) if model.standardized_plop else [],
-            processing_weaknesses=model.standardized_plop.get("weaknesses", []) if model.standardized_plop else [],
+            processing_strengths=standardized_plop.get("strengths", []),
+            processing_weaknesses=standardized_plop.get("weaknesses", []),
             attention_metrics=attention_metrics,
             social_emotional_metrics=social_emotional_metrics,
             executive_function_metrics={},
-            growth_rates=model.growth_rate or {},
-            progress_indicators=model.progress_indicators or [],
-            learning_style=model.learning_style_profile.get("primary_style", "") if model.learning_style_profile else "",
-            optimal_conditions=model.learning_style_profile.get("optimal_conditions", []) if model.learning_style_profile else [],
-            barriers=model.standardized_plop.get("barriers", []) if model.standardized_plop else [],
-            priority_goals=model.priority_goals or [],
-            service_recommendations=model.service_recommendations or []
+            growth_rates=data_dict.get("growth_rate", {}),
+            progress_indicators=data_dict.get("progress_indicators", []),
+            learning_style=learning_style_profile.get("primary_style", ""),
+            optimal_conditions=learning_style_profile.get("optimal_conditions", []),
+            barriers=standardized_plop.get("barriers", []),
+            priority_goals=data_dict.get("priority_goals", []),
+            service_recommendations=data_dict.get("service_recommendations", [])
         )
     
     @staticmethod
-    def pipeline_to_status_dto(model: AssessmentPipeline) -> PipelineStatusResponseDTO:
-        """Convert pipeline model to status DTO"""
+    def pipeline_dict_to_status_dto(data_dict: Dict[str, Any]) -> PipelineStatusResponseDTO:
+        """Convert pipeline dictionary to status DTO"""
+        from datetime import datetime
         
         # Calculate progress
         stage_weights = {
@@ -284,95 +285,107 @@ class DataMapper:
             "failed": 0
         }
         
-        progress = stage_weights.get(model.status, 0)
+        status = data_dict.get("status", "initiated")
+        progress = stage_weights.get(status, 0)
         
         # Determine stages completed
         stages_order = ["intake", "extracting", "quantifying", "generating", "review"]
-        current_index = stages_order.index(model.current_stage) if model.current_stage in stages_order else -1
+        current_stage = data_dict.get("current_stage")
+        current_index = stages_order.index(current_stage) if current_stage in stages_order else -1
         stages_completed = stages_order[:current_index] if current_index >= 0 else []
         
         # Calculate elapsed time
-        elapsed = (datetime.utcnow() - model.created_at).total_seconds()
+        created_at = data_dict.get("created_at")
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+        elif created_at is None:
+            created_at = datetime.utcnow()
+            
+        elapsed = (datetime.utcnow() - created_at).total_seconds()
         
         # Estimate completion (rough estimate: 5 minutes per stage)
         remaining_stages = len(stages_order) - len(stages_completed)
         estimated_completion = datetime.utcnow() + (remaining_stages * 300)  # 5 min per stage
         
         return PipelineStatusResponseDTO(
-            pipeline_id=model.id,
-            status=model.status,
-            current_stage=model.current_stage,
+            pipeline_id=data_dict.get("id"),
+            status=status,
+            current_stage=current_stage,
             progress_percentage=progress,
             stages_completed=stages_completed,
             current_stage_progress=None,  # Would need sub-stage tracking
-            started_at=model.created_at,
-            estimated_completion=estimated_completion if model.status not in ["completed", "failed"] else None,
+            started_at=created_at,
+            estimated_completion=estimated_completion if status not in ["completed", "failed"] else None,
             elapsed_seconds=elapsed,
-            has_results=model.status == "completed",
-            preview_available=model.status in ["generating", "review", "completed"],
-            has_errors=model.status == "failed",
-            error_message=model.error_message
+            has_results=status == "completed",
+            preview_available=status in ["generating", "review", "completed"],
+            has_errors=status == "failed",
+            error_message=data_dict.get("error_message")
         )
     
     @staticmethod
-    def pipeline_to_response_dto(model: AssessmentPipeline) -> AssessmentPipelineResponseDTO:
-        """Convert pipeline model to full response DTO"""
+    def pipeline_dict_to_response_dto(data_dict: Dict[str, Any]) -> AssessmentPipelineResponseDTO:
+        """Convert pipeline dictionary to full response DTO"""
         
         # Parse stage results
         intake_results = None
-        if model.intake_results:
+        if data_dict.get("intake_results"):
+            intake_data = data_dict["intake_results"]
             intake_results = IntakeResultDTO(
-                documents_processed=model.intake_results.get("documents_processed", 0),
-                extraction_results=model.intake_results.get("extraction_results", []),
-                average_confidence=model.intake_results.get("average_confidence", 0),
-                psychoed_scores_extracted=model.intake_results.get("scores_extracted", 0),
-                review_required_count=model.intake_results.get("review_required", 0)
+                documents_processed=intake_data.get("documents_processed", 0),
+                extraction_results=intake_data.get("extraction_results", []),
+                average_confidence=intake_data.get("average_confidence", 0),
+                psychoed_scores_extracted=intake_data.get("scores_extracted", 0),
+                review_required_count=intake_data.get("review_required", 0)
             )
         
         quantification_results = None
-        if model.quantification_results:
+        if data_dict.get("quantification_results"):
+            quant_data = data_dict["quantification_results"]
             quantification_results = QuantificationResultDTO(
-                domains_quantified=model.quantification_results.get("domains", []),
-                completeness_score=model.quantification_results.get("completeness", 0),
-                academic_metrics_generated=model.quantification_results.get("academic_metrics", 0),
-                behavioral_matrices_generated=model.quantification_results.get("behavioral_matrices", 0),
-                composite_profile_complete=model.quantification_results.get("profile_complete", False),
-                missing_data_areas=model.quantification_results.get("missing_areas", [])
+                domains_quantified=quant_data.get("domains", []),
+                completeness_score=quant_data.get("completeness", 0),
+                academic_metrics_generated=quant_data.get("academic_metrics", 0),
+                behavioral_matrices_generated=quant_data.get("behavioral_matrices", 0),
+                composite_profile_complete=quant_data.get("profile_complete", False),
+                missing_data_areas=quant_data.get("missing_areas", [])
             )
         
         generation_results = None
-        if model.rag_generation_results:
+        if data_dict.get("rag_generation_results"):
+            gen_data = data_dict["rag_generation_results"]
             generation_results = GenerationResultDTO(
-                sections_generated=model.rag_generation_results.get("sections", []),
-                goals_created=model.rag_generation_results.get("goals_count", 0),
-                quality_score=model.rag_generation_results.get("quality_score", 0),
-                regurgitation_check_passed=model.rag_generation_results.get("regurgitation_passed", False),
-                smart_compliance_rate=model.rag_generation_results.get("smart_compliance", 0),
-                professional_terminology_count=model.rag_generation_results.get("terminology_count", 0)
+                sections_generated=gen_data.get("sections", []),
+                goals_created=gen_data.get("goals_count", 0),
+                quality_score=gen_data.get("quality_score", 0),
+                regurgitation_check_passed=gen_data.get("regurgitation_passed", False),
+                smart_compliance_rate=gen_data.get("smart_compliance", 0),
+                professional_terminology_count=gen_data.get("terminology_count", 0)
             )
         
         # Extract IEP content if available
         iep_content = None
-        if model.rag_generation_results and "iep_content" in model.rag_generation_results:
-            iep_content = model.rag_generation_results["iep_content"]
+        rag_results = data_dict.get("rag_generation_results")
+        if rag_results and "iep_content" in rag_results:
+            iep_content = rag_results["iep_content"]
         
         return AssessmentPipelineResponseDTO(
-            pipeline_id=model.id,
-            status=model.status,
+            pipeline_id=data_dict.get("id"),
+            status=data_dict.get("status"),
             intake_results=intake_results,
             quantification_results=quantification_results,
             generation_results=generation_results,
             review_package=None,  # Would be populated from review_results
-            overall_confidence=model.overall_confidence or 0,
-            total_processing_time=model.processing_time_seconds or 0,
+            overall_confidence=data_dict.get("overall_confidence", 0),
+            total_processing_time=data_dict.get("processing_time_seconds", 0),
             iep_content=iep_content,
             supporting_documents=[],  # Would be populated from relationships
             quality_summary={
-                "extraction_confidence": model.extraction_confidence,
-                "quantification_completeness": model.quantification_completeness,
-                "generation_quality": model.generation_quality_score
+                "extraction_confidence": data_dict.get("extraction_confidence"),
+                "quantification_completeness": data_dict.get("quantification_completeness"),
+                "generation_quality": data_dict.get("generation_quality_score")
             },
-            requires_review=model.review_status == "pending" if model.review_status else False
+            requires_review=data_dict.get("review_status") == "pending" if data_dict.get("review_status") else False
         )
     
     @staticmethod

@@ -9,9 +9,8 @@ import tempfile
 import os
 import base64
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.responses import JSONResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from assessment_pipeline_service.schemas.assessment_schemas import (
     AssessmentUploadDTO, ExtractedDataDTO, PsychoedScoreDTO,
@@ -21,10 +20,8 @@ from assessment_pipeline_service.schemas.assessment_schemas import (
 from assessment_pipeline_service.src.assessment_intake_processor import AssessmentIntakeProcessor
 from assessment_pipeline_service.src.data_mapper import DataMapper
 from assessment_pipeline_service.src.rag_integration import RAGIntegrationService
-from assessment_pipeline_service.models.assessment_models import (
-    AssessmentDocument, PsychoedScore, ExtractedAssessmentData,
-    CognitiveProfile, AcademicProfile, BehavioralProfile, QuantifiedAssessmentData
-)
+from assessment_pipeline_service.src.service_clients import special_education_client
+# Database models removed - using service clients for data persistence
 
 logger = logging.getLogger(__name__)
 
