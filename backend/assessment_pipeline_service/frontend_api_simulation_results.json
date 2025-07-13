@@ -1,0 +1,42 @@
+{
+  "test_metadata": {
+    "test_date": "2025-07-12T15:41:47.661126",
+    "test_type": "frontend_api_simulation",
+    "frontend_url": "http://localhost:3002",
+    "backend_url": "http://localhost:8005",
+    "test_description": "Complete simulation of frontend user workflow through API calls"
+  },
+  "test_results": {
+    "frontend_accessibility": {
+      "status": "success",
+      "url": "http://localhost:3002/students/iep/generator",
+      "indicators": [
+        "IEP",
+        "GENERATOR",
+        "STUDENT",
+        "TEMPLATE"
+      ]
+    },
+    "user_form_simulation": {
+      "status": "success",
+      "sections_count": 7,
+      "student_name": "toronto district",
+      "template_name": "Basic SLD Template"
+    },
+    "backend_api_integration": {
+      "status": "success",
+      "duration_seconds": 25.728134,
+      "response_size": 5694,
+      "content_sections": 5,
+      "iep_id": "fd1cd270-1f19-46af-b360-877dd6e0869a",
+      "generated_at": "2025-07-12T19:41:21.932872+00:00"
+    },
+    "frontend_display_simulation": {
+      "status": "success",
+      "sections_processed": 5,
+      "total_display_characters": 4929,
+      "student_name": "N/A",
+      "processing_time": 25.728134
+    }
+  }
+}

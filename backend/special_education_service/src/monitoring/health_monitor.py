@@ -5,7 +5,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 
-from ..database import async_session_factory
+from ..database import async_session_factory, engine
 from .metrics_collector import metrics_collector
 
 logger = logging.getLogger(__name__)
@@ -64,10 +64,9 @@ class HealthMonitor:
             memory_info = psutil.virtual_memory()
             memory_usage_mb = memory_info.used / (1024 * 1024)
             
-            # Database pool metrics
-            session_maker = async_session_factory
-            pool_size = getattr(session_maker.bind.pool, 'size', lambda: 10)()
-            pool_checked_out = getattr(session_maker.bind.pool, 'checkedout', lambda: 0)()
+            # Database pool metrics (fixed to use engine directly)
+            pool_size = getattr(engine.pool, 'size', lambda: 10)()
+            pool_checked_out = getattr(engine.pool, 'checkedout', lambda: 0)()
             
             # Calculate error rate from recent operations
             recent_performance = metrics_collector.get_performance_summary(hours=1)

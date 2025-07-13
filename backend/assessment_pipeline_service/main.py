@@ -146,12 +146,14 @@ async def health_check():
         )
 
 # Include routers
-try:
-    from assessment_pipeline_service.api.assessment_routes import router as assessment_router
-    app.include_router(assessment_router)
-    logger.info("Assessment routes loaded successfully")
-except ImportError as e:
-    logger.error(f"Failed to load assessment routes: {e}")
+# NOTE: assessment_routes.py disabled due to direct database access conflicts
+# Using processing_routes.py which follows service-oriented architecture
+# try:
+#     from assessment_pipeline_service.api.assessment_routes import router as assessment_router
+#     app.include_router(assessment_router)
+#     logger.info("Assessment routes loaded successfully")
+# except ImportError as e:
+#     logger.error(f"Failed to load assessment routes: {e}")
 
 try:
     from assessment_pipeline_service.api.pipeline_routes import router as pipeline_router
@@ -159,6 +161,13 @@ try:
     logger.info("Pipeline routes loaded successfully")
 except ImportError as e:
     logger.warning(f"Pipeline routes not available: {e}")
+
+try:
+    from assessment_pipeline_service.api.processing_routes import router as processing_router
+    app.include_router(processing_router)
+    logger.info("Processing routes loaded successfully")
+except ImportError as e:
+    logger.warning(f"Processing routes not available: {e}")
 
 # Root endpoint (no auth required)
 @app.get("/", response_model=dict)

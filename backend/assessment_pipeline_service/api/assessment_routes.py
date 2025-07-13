@@ -9,8 +9,9 @@ import tempfile
 import os
 import base64
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from assessment_pipeline_service.schemas.assessment_schemas import (
     AssessmentUploadDTO, ExtractedDataDTO, PsychoedScoreDTO,
@@ -21,20 +22,21 @@ from assessment_pipeline_service.src.assessment_intake_processor import Assessme
 from assessment_pipeline_service.src.data_mapper import DataMapper
 from assessment_pipeline_service.src.rag_integration import RAGIntegrationService
 from assessment_pipeline_service.src.service_clients import special_education_client
+from assessment_pipeline_service.src.service_communication import (
+    service_comm_manager, ServiceType, create_assessment_document
+)
+from special_education_service.src.database import get_db_session
+from assessment_pipeline_service.src.auth_middleware import (
+    get_current_user, require_teacher_or_above, require_coordinator_or_above
+)
 # Database models removed - using service clients for data persistence
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/assessment-pipeline", tags=["assessments"])
 
-# Database session dependency - use shared database
-async def get_db_session() -> AsyncSession:
-    """Get database session for assessment pipeline operations using shared database"""
-    # Use the main special education database directly
-    from special_education_service.src.database import get_db_session as special_ed_get_db
-    
-    async with special_ed_get_db() as session:
-        yield session
+# Processing-only service - no direct database access
+# All data persistence goes through special_education_client
 
 # Dependency for assessment processor
 def get_assessment_processor() -> AssessmentIntakeProcessor:
@@ -44,40 +46,56 @@ def get_assessment_processor() -> AssessmentIntakeProcessor:
 async def upload_assessment_document(
     assessment_data: AssessmentUploadDTO,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db_session),
-    processor: AssessmentIntakeProcessor = Depends(get_assessment_processor)
+    processor: AssessmentIntakeProcessor = Depends(get_assessment_processor),
+    current_user: dict = Depends(require_teacher_or_above())
 ):
     """Upload a single assessment document"""
     
     try:
-        logger.info(f"Uploading assessment document for student {assessment_data.student_id}")
+        logger.info(f"Uploading assessment document for student {assessment_data.student_id} by user {current_user.get('sub', 'unknown')}")
         
-        # Create document record
-        document = DataMapper.upload_dto_to_document(assessment_data)
-        document.processing_status = "pending"
+        # Convert DTO to dictionary for service communication
+        document_data = DataMapper.upload_dto_to_dict(assessment_data)
+        document_data["processing_status"] = "pending"
+        document_data["uploaded_by"] = current_user.get("sub")
+        document_data["upload_timestamp"] = datetime.utcnow().isoformat()
         
-        # Save to database
-        db.add(document)
-        await db.commit()
-        await db.refresh(document)
+        # Create document via special education service
+        response = await service_comm_manager.send_request(
+            ServiceType.SPECIAL_EDUCATION,
+            "create_assessment_document",
+            document_data,
+            correlation_id=f"upload-{assessment_data.student_id}"
+        )
         
-        logger.info(f"Assessment document {document.id} saved to database")
+        if response.status.value != "success":
+            logger.error(f"Failed to create document via service: {response.error_message}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Document creation failed: {response.error_message}"
+            )
+        
+        document_id = response.data.get("id") or response.data.get("document_id")
+        logger.info(f"Assessment document {document_id} created via service")
         
         # Process document in background
         background_tasks.add_task(
             process_document_background,
-            str(document.id),
+            str(document_id),
             assessment_data.file_path or f"/tmp/{assessment_data.file_name}",
             assessment_data.model_dump(),
             processor
         )
         
         return {
-            "document_id": str(document.id),
+            "document_id": str(document_id),
             "status": "uploaded",
-            "message": "Document uploaded successfully. Processing will begin shortly."
+            "message": "Document uploaded successfully. Processing will begin shortly.",
+            "service_response_time_ms": response.execution_time_ms
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error uploading assessment document: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
@@ -86,8 +104,8 @@ async def upload_assessment_document(
 async def upload_multiple_documents(
     request: dict,  # Contains 'documents' list
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db_session),
-    processor: AssessmentIntakeProcessor = Depends(get_assessment_processor)
+    processor: AssessmentIntakeProcessor = Depends(get_assessment_processor),
+    current_user: dict = Depends(require_teacher_or_above())
 ):
     """Upload multiple assessment documents"""
     
@@ -96,36 +114,71 @@ async def upload_multiple_documents(
         if not documents_data:
             raise HTTPException(status_code=400, detail="No documents provided")
         
-        document_ids = []
+        logger.info(f"Batch uploading {len(documents_data)} documents by user {current_user.get('sub', 'unknown')}")
+        
+        # Prepare batch requests for service communication
+        batch_requests = []
+        assessment_dtos = []
         
         for doc_data in documents_data:
             # Convert to DTO
             assessment_dto = AssessmentUploadDTO(**doc_data)
+            assessment_dtos.append(assessment_dto)
             
-            # Create document record
-            document = DataMapper.upload_dto_to_document(assessment_dto)
-            document.processing_status = "pending"
+            # Convert to service request
+            document_data = DataMapper.upload_dto_to_dict(assessment_dto)
+            document_data["processing_status"] = "pending"
+            document_data["uploaded_by"] = current_user.get("sub")
+            document_data["upload_timestamp"] = datetime.utcnow().isoformat()
             
-            # Save to database
-            db.add(document)
-            await db.flush()  # Get the ID without committing
-            await db.refresh(document)
-            document_ids.append(str(document.id))
-            
-            # Process in background
-            background_tasks.add_task(
-                process_document_background,
-                str(document.id),
-                assessment_dto.file_path or f"/tmp/{assessment_dto.file_name}",
-                assessment_dto.model_dump(),
-                processor
-            )
+            batch_requests.append((
+                ServiceType.SPECIAL_EDUCATION,
+                "create_assessment_document",
+                document_data
+            ))
         
-        return {
+        # Execute batch request
+        responses = await service_comm_manager.batch_request(
+            batch_requests,
+            correlation_id=f"batch-upload-{len(documents_data)}"
+        )
+        
+        document_ids = []
+        failed_uploads = []
+        
+        for i, response in enumerate(responses):
+            if response.status.value == "success":
+                document_id = response.data.get("id") or response.data.get("document_id")
+                document_ids.append(str(document_id))
+                
+                # Process in background
+                background_tasks.add_task(
+                    process_document_background,
+                    str(document_id),
+                    assessment_dtos[i].file_path or f"/tmp/{assessment_dtos[i].file_name}",
+                    assessment_dtos[i].model_dump(),
+                    processor
+                )
+            else:
+                failed_uploads.append({
+                    "index": i,
+                    "file_name": assessment_dtos[i].file_name,
+                    "error": response.error_message
+                })
+        
+        result = {
             "document_ids": document_ids,
-            "status": "uploaded",
-            "message": f"Successfully uploaded {len(document_ids)} documents for processing."
+            "status": "completed" if not failed_uploads else "partial",
+            "successful_uploads": len(document_ids),
+            "failed_uploads": len(failed_uploads),
+            "message": f"Successfully uploaded {len(document_ids)} of {len(documents_data)} documents."
         }
+        
+        if failed_uploads:
+            result["failures"] = failed_uploads
+            logger.warning(f"Batch upload partially failed: {len(failed_uploads)} failures")
+        
+        return result
         
     except Exception as e:
         logger.error(f"Error in batch upload: {e}")

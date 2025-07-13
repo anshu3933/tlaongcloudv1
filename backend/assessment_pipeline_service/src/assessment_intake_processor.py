@@ -13,28 +13,10 @@ from google.cloud import documentai_v1 as documentai
 from google.cloud import storage
 import httpx
 
-import enum
-from assessment_pipeline_service.schemas.assessment_schemas import PsychoedScoreDTO, ExtractedDataDTO
+from assessment_pipeline_service.schemas.assessment_schemas import (
+    PsychoedScoreDTO, ExtractedDataDTO, AssessmentTypeEnum as AssessmentType
+)
 from .service_clients import special_education_client
-
-class AssessmentType(enum.Enum):
-    """Standardized assessment types (local copy for processing logic)"""
-    WISC_V = "wisc_v"
-    WIAT_IV = "wiat_iv"
-    WJ_IV = "wj_iv"
-    BASC_3 = "basc_3"
-    CONNERS_3 = "conners_3"
-    CTOPP_2 = "ctopp_2"
-    KTEA_3 = "ktea_3"
-    DAS_II = "das_ii"
-    GORT_5 = "gort_5"
-    TOWL_4 = "towl_4"
-    BRIEF_2 = "brief_2"
-    VINELAND_3 = "vineland_3"
-    FBA = "functional_behavior_assessment"
-    CBM = "curriculum_based_measure"
-    OBSERVATION = "teacher_observation"
-    PROGRESS_MONITORING = "progress_monitoring"
 
 logger = logging.getLogger(__name__)
 

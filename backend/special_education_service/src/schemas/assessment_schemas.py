@@ -3,26 +3,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from uuid import UUID
-from enum import Enum
-
-class AssessmentType(str, Enum):
-    """Standardized assessment types"""
-    WISC_V = "wisc_v"
-    WIAT_IV = "wiat_iv"
-    WJ_IV = "wj_iv"
-    BASC_3 = "basc_3"
-    CONNERS_3 = "conners_3"
-    CTOPP_2 = "ctopp_2"
-    KTEA_3 = "ktea_3"
-    DAS_II = "das_ii"
-    GORT_5 = "gort_5"
-    TOWL_4 = "towl_4"
-    BRIEF_2 = "brief_2"
-    VINELAND_3 = "vineland_3"
-    FBA = "functional_behavior_assessment"
-    CBM = "curriculum_based_measure"
-    OBSERVATION = "teacher_observation"
-    PROGRESS_MONITORING = "progress_monitoring"
+from ..common.enums import AssessmentType
 
 # Assessment Document schemas
 class AssessmentDocumentBase(BaseModel):
@@ -61,7 +42,7 @@ class AssessmentDocumentResponse(AssessmentDocumentBase):
     model_config = ConfigDict(from_attributes=True)
     
     id: UUID
-    upload_date: datetime
+    upload_date: Optional[datetime] = None
     processing_status: str
     extraction_confidence: Optional[float] = None
     processing_duration: Optional[float] = None

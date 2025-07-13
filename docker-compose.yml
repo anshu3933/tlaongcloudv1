@@ -107,6 +107,38 @@ services:
       workflow-service:
         condition: service_started
 
+  assessment-pipeline-service:
+    build:
+      context: .
+      dockerfile: backend/assessment_pipeline_service/Dockerfile
+    ports:
+      - "8006:8006"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
+      - SPECIAL_ED_SERVICE_URL=${SPECIAL_ED_SERVICE_URL}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCP_REGION=${GCP_REGION}
+      - GEMINI_MODEL=${GEMINI_MODEL}
+      - DOCUMENT_AI_PROJECT_ID=${DOCUMENT_AI_PROJECT_ID}
+      - DOCUMENT_AI_PROCESSOR_ID=${DOCUMENT_AI_PROCESSOR_ID}
+      - DOCUMENT_AI_LOCATION=${DOCUMENT_AI_LOCATION}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
+    volumes:
+      - ${GOOGLE_APPLICATION_CREDENTIALS}:${GOOGLE_APPLICATION_CREDENTIALS}:ro
+      - uploaded_documents:/app/uploaded_documents
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      special-education-service:
+        condition: service_started
+
   mcp-server:
     build:
       context: .
@@ -145,6 +177,7 @@ services:
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
       - WORKFLOW_SERVICE_URL=${WORKFLOW_SERVICE_URL}
       - SPECIAL_ED_SERVICE_URL=${SPECIAL_ED_SERVICE_URL}
+      - ASSESSMENT_PIPELINE_SERVICE_URL=${ASSESSMENT_PIPELINE_SERVICE_URL}
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
       - GCP_REGION=${GCP_REGION}
       - GEMINI_MODEL=${GEMINI_MODEL}
@@ -166,6 +199,8 @@ services:
       workflow-service:
         condition: service_started
       special-education-service:
+        condition: service_started
+      assessment-pipeline-service:
         condition: service_started
 
 volumes:

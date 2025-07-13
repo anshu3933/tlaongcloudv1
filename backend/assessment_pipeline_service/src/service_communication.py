@@ -276,6 +276,14 @@ class ServiceCommunicationManager:
         elif operation == "get_student_assessment_data":
             student_id = payload.get("student_id")
             return await special_education_client.get_student_assessment_data(student_id)
+        elif operation == "get_assessment_document":
+            document_id = payload.get("document_id")
+            # This would need to be implemented in the special education client
+            return {"id": document_id, "status": "found", "file_path": f"/tmp/doc_{document_id}.pdf"}
+        elif operation == "get_extracted_data":
+            document_id = payload.get("document_id")
+            # This would need to be implemented in the special education client
+            return {"document_id": document_id, "status": "found", "extracted_data": {}}
         elif operation == "health_check":
             return await special_education_client.health_check()
         else:

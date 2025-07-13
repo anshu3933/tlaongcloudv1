@@ -1,0 +1,226 @@
+{
+  "test_metadata": {
+    "test_date": "2025-07-12T15:25:14.337326",
+    "test_type": "live_end_to_end_assessment_pipeline",
+    "services_tested": [
+      "special_education_service:8005",
+      "assessment_pipeline_service:8006"
+    ]
+  },
+  "test_data": {
+    "student": {
+      "student_id": "45",
+      "first_name": "toronto",
+      "last_name": "district",
+      "middle_name": null,
+      "date_of_birth": "2222-01-01",
+      "grade_level": "6",
+      "disability_codes": [
+        "SLD"
+      ],
+      "school_district": "Default District",
+      "school_name": "Default School",
+      "enrollment_date": "2025-06-26",
+      "id": "c6f74363-c1fb-4b0f-bd6b-0ae5c8a6f826",
+      "full_name": "toronto district",
+      "case_manager_auth_id": null,
+      "primary_teacher_auth_id": null,
+      "parent_guardian_auth_ids": [],
+      "active_iep_id": null,
+      "is_active": true,
+      "created_at": "2025-06-26T16:22:40.616328Z",
+      "updated_at": null,
+      "case_manager_user": null,
+      "primary_teacher_user": null,
+      "parent_guardian_users": [],
+      "active_iep": null
+    },
+    "template": {
+      "name": "Basic SLD Template",
+      "grade_level": "6",
+      "sections": {
+        "basic": true
+      },
+      "default_goals": [],
+      "id": "365f147b-3512-47a8-b80d-a92a391db269",
+      "disability_type_id": "e33fd87e-5c14-4e91-8c39-35b857ba2945",
+      "version": 1,
+      "is_active": true,
+      "created_by_auth_id": 1,
+      "created_at": "2025-06-26T23:41:55.248499Z",
+      "updated_at": null,
+      "disability_type": null,
+      "created_by_user": null
+    },
+    "assessment_data": {
+      "student_name": "toronto district",
+      "grade_level": "5",
+      "case_manager_name": "Dr. Sarah Johnson",
+      "assessment_summary": {
+        "current_achievement": "Student demonstrates significant challenges in reading comprehension and written expression. Current reading level is approximately 2.5 grade levels below peers.",
+        "strengths": [
+          "Strong visual-spatial processing abilities",
+          "Excellent mathematical reasoning skills",
+          "Good social interaction with peers",
+          "Demonstrates persistence when provided appropriate support"
+        ],
+        "areas_for_growth": [
+          "Reading fluency and comprehension",
+          "Written expression and organization",
+          "Working memory for multi-step tasks",
+          "Attention and focus during academic tasks"
+        ],
+        "learning_profile": "Student is a visual learner who benefits from graphic organizers, visual supports, and hands-on activities. Learns best in small group settings with frequent breaks.",
+        "interests": [
+          "Art and drawing",
+          "Building with blocks/Legos",
+          "Animals and nature",
+          "Technology and computers"
+        ]
+      },
+      "cognitive_profile": {
+        "verbal_comprehension": 85,
+        "visual_spatial": 92,
+        "fluid_reasoning": 88,
+        "working_memory": 79,
+        "processing_speed": 83,
+        "full_scale_iq": 84
+      },
+      "academic_scores": {
+        "reading": {
+          "letter_word_identification": 78,
+          "reading_fluency": 82,
+          "passage_comprehension": 75
+        },
+        "writing": {
+          "spelling": 80,
+          "writing_samples": 77
+        },
+        "math": {
+          "calculation": 89,
+          "math_facts_fluency": 85,
+          "applied_problems": 91
+        }
+      },
+      "behavioral_profile": {
+        "attention_problems": 68,
+        "learning_problems": 72,
+        "anxiety": 58,
+        "social_skills": 52
+      },
+      "disability_categories": [
+        "SLD"
+      ],
+      "previous_interventions": [
+        "Small group reading instruction",
+        "Extended time for assignments",
+        "Use of graphic organizers",
+        "Frequent check-ins with teacher"
+      ]
+    },
+    "generated_iep": {
+      "id": "e6e1676e-4d14-4463-97b0-d27bf9ecc7f4",
+      "student_id": "c6f74363-c1fb-4b0f-bd6b-0ae5c8a6f826",
+      "template_id": "365f147b-3512-47a8-b80d-a92a391db269",
+      "academic_year": "2024-2025",
+      "status": "draft",
+      "content": {
+        "basic": {
+          "student_information": {
+            "student_name": "toronto district",
+            "grade_level": 5,
+            "disability_type": "Not specified",
+            "case_manager": "Dr. Sarah Johnson",
+            "placement_setting": "Not specified in basic section",
+            "service_hours_per_week": "0 (Not applicable to this section)"
+          },
+          "present_levels_of_academic_achievement_and_functional_performance": {
+            "current_achievement_summary": "toronto district, a 5th-grade student, demonstrates significant challenges in academic areas, particularly reading comprehension and written expression. Current assessment indicates a reading level approximately 2.5 grade levels below peers. This impacts their ability to access grade-level curriculum.",
+            "student_strengths": [
+              "toronto district exhibits strong visual-spatial processing abilities, which can be leveraged in learning.",
+              "Excellent mathematical reasoning skills are evident, suggesting a foundational strength in logical problem-solving.",
+              "The student demonstrates good social interaction with peers, fostering a positive classroom environment.",
+              "Persistence is observed when toronto district is provided with appropriate support, indicating a strong work ethic and potential for growth."
+            ],
+            "areas_for_growth": [
+              "Reading fluency and comprehension: toronto district requires targeted support to improve reading speed, accuracy, and understanding of text.",
+              "Written expression and organization: Development is needed in structuring thoughts, composing coherent paragraphs, and improving overall written communication.",
+              "Working memory for multi-step tasks: Support is necessary to enhance the ability to retain and process multiple pieces of information for complex tasks.",
+              "Attention and focus during academic tasks: Strategies are needed to improve sustained attention and concentration during instructional periods and independent work."
+            ],
+            "learning_profile": "toronto district is identified as a visual learner who benefits significantly from graphic organizers, visual supports, and hands-on activities. Optimal learning occurs in small group settings with frequent breaks to maintain engagement and focus.",
+            "student_interests": [
+              "Art and drawing",
+              "Building with blocks/Legos",
+              "Animals and nature",
+              "Technology and computers"
+            ],
+            "impact_of_needs_on_general_education_curriculum": "The identified challenges in reading comprehension, written expression, working memory, and attention significantly impact toronto district's ability to independently access, comprehend, and demonstrate knowledge within the general education 5th-grade curriculum. Without targeted interventions and accommodations, toronto district may struggle to meet grade-level expectations in literacy-dependent subjects and tasks requiring sustained focus or multi-step processing."
+          },
+          "educational_planning_considerations": {
+            "annual_goals_focus_areas": [
+              "Improving reading comprehension of grade-level informational and literary texts by applying visual strategies to identify main ideas and supporting details.",
+              "Increasing reading fluency to near-grade level expectations (e.g., 90-100 WCPM) with improved accuracy.",
+              "Enhancing written expression through the independent use of visual pre-writing strategies to organize ideas for structured compositions.",
+              "Developing strategies to improve working memory for multi-step academic tasks, particularly in problem-solving, leveraging visual strengths.",
+              "Increasing on-task behavior and sustained attention during academic tasks, reducing the need for redirection."
+            ],
+            "potential_teaching_strategies": [
+              "Consistent use of graphic organizers and visual aids across subjects to support comprehension and organization.",
+              "Incorporation of hands-on activities and manipulatives, especially in math and science, to leverage visual-spatial strengths.",
+              "Structured small group instruction to provide individualized support and frequent checks for understanding.",
+              "Integration of frequent breaks and movement opportunities during academic blocks to support attention and focus.",
+              "Utilizing toronto district's interests (e.g., art, building, technology) to create engaging and motivating learning tasks.",
+              "Explicit instruction in pre-reading and pre-writing strategies, leveraging visual strengths for idea generation and organization."
+            ],
+            "assessment_methods_considerations": [
+              "Curriculum-Based Measurement (CBM) probes for monitoring reading fluency and comprehension progress.",
+              "Rubrics for evaluating written expression and organization in compositions.",
+              "Teacher observation and anecdotal notes on attention, focus, and working memory application during academic tasks.",
+              "Analysis of student work samples, especially those incorporating visual strategies and graphic organizers.",
+              "Teacher-created assessments adapted to toronto district's learning profile, potentially allowing for visual responses or reduced writing demands to demonstrate understanding."
+            ],
+            "historical_context_summary": "There is no previous assessment history for toronto district. Previous goals, while general, align with the identified needs, emphasizing visual strategies for reading comprehension, mathematical problem-solving, and written organization, as well as general academic goals for reading fluency, multi-step math problems, and on-task behavior."
+          }
+        },
+        "template_used": "Basic SLD Template",
+        "generation_method": "rag_powered_ai",
+        "ai_model": "gemini-2.5-flash",
+        "generated_at": "2025-01-15"
+      },
+      "meeting_date": "2025-01-15",
+      "effective_date": "2025-01-15",
+      "review_date": "2026-01-15",
+      "version": 9,
+      "parent_version_id": "2327bbf2-db43-4716-922e-472003dbef1e",
+      "created_by_auth_id": 1,
+      "created_at": "2025-07-12T19:24:46.652139+00:00",
+      "approved_at": null,
+      "approved_by_auth_id": null,
+      "_transformation_metadata": {
+        "flattened_at": "2025-07-12T19:25:14.309473",
+        "transformation_summary": {
+          "total_transformed": 0,
+          "transformations": [],
+          "fields_processed": 5,
+          "fields_kept_original": 5
+        },
+        "problems_detected": [],
+        "flattener_version": "1.0.0"
+      }
+    }
+  },
+  "results": {
+    "special_ed_health": "healthy",
+    "assessment_health": "healthy",
+    "rag_generation": {
+      "status": "success",
+      "duration_seconds": 27.662155,
+      "content_sections": 5,
+      "goals_count": 0,
+      "total_response_size": 6171
+    },
+    "iep_retrieval": "success",
+    "flattener_health": "success"
+  }
+}

@@ -545,3 +545,62 @@ class DataMapper:
                 formatted_services.append(formatted_service)
         
         return formatted_services
+    
+    @staticmethod
+    def extraction_result_to_dict(result: Dict[str, Any], document_id: str) -> Dict[str, Any]:
+        """Convert extraction result to dictionary for service communication"""
+        
+        return {
+            "document_id": document_id,
+            "extraction_confidence": result.get("confidence_score", 0.0),
+            "extracted_text": result.get("extracted_text", ""),
+            "form_fields": result.get("form_fields", {}),
+            "tables": result.get("tables", []),
+            "scores": result.get("scores", []),
+            "metadata": {
+                "extraction_timestamp": datetime.utcnow().isoformat(),
+                "extraction_method": result.get("method", "unknown"),
+                "processing_notes": result.get("notes", ""),
+                "total_pages": result.get("page_count", 0),
+                "language_detected": result.get("language", "en")
+            },
+            "quality_metrics": {
+                "text_confidence": result.get("text_confidence", 0.0),
+                "table_confidence": result.get("table_confidence", 0.0),
+                "form_confidence": result.get("form_confidence", 0.0)
+            }
+        }
+    
+    @staticmethod
+    def quantified_result_to_dict(result: Dict[str, Any], document_id: str) -> Dict[str, Any]:
+        """Convert quantification result to dictionary for service communication"""
+        
+        return {
+            "document_id": document_id,
+            "quantification_confidence": result.get("confidence_score", 0.0),
+            "cognitive_metrics": result.get("cognitive_profile", {}),
+            "academic_metrics": result.get("academic_profile", {}),
+            "behavioral_metrics": result.get("behavioral_profile", {}),
+            "composite_scores": result.get("composite_scores", {}),
+            "grade_level_analysis": {
+                "current_grade": result.get("grade_analysis", {}).get("current_grade"),
+                "functioning_level": result.get("grade_analysis", {}).get("functioning_level"),
+                "strengths": result.get("grade_analysis", {}).get("strengths", []),
+                "needs": result.get("grade_analysis", {}).get("needs", []),
+                "recommendations": result.get("grade_analysis", {}).get("recommendations", [])
+            },
+            "quantification_metadata": {
+                "quantification_timestamp": datetime.utcnow().isoformat(),
+                "quantification_method": result.get("method", "unknown"),
+                "processing_notes": result.get("notes", ""),
+                "data_quality_score": result.get("data_quality", 0.0),
+                "norm_group": result.get("norm_group", "unknown")
+            },
+            "rag_ready_metrics": {
+                "reading_level": result.get("rag_metrics", {}).get("reading_level", 0.0),
+                "math_level": result.get("rag_metrics", {}).get("math_level", 0.0),
+                "writing_level": result.get("rag_metrics", {}).get("writing_level", 0.0),
+                "behavior_frequency": result.get("rag_metrics", {}).get("behavior_frequency", 0.0),
+                "attention_duration": result.get("rag_metrics", {}).get("attention_duration", 0.0)
+            }
+        }

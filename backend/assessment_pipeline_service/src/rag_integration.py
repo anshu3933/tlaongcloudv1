@@ -77,10 +77,10 @@ class RAGIntegrationService:
                     enhanced_result = {
                         **iep_result,
                         "assessment_pipeline_metadata": {
-                            "quantified_data_id": str(quantified_data.id),
-                            "assessment_date": quantified_data.assessment_date.isoformat(),
-                            "confidence_metrics": quantified_data.confidence_metrics,
-                            "source_documents": quantified_data.source_documents,
+                            "quantified_data_id": str(quantified_data.get("id", "unknown")),
+                            "assessment_date": quantified_data.get("assessment_date", datetime.utcnow().isoformat()),
+                            "confidence_metrics": quantified_data.get("confidence_metrics", {}),
+                            "source_documents": quantified_data.get("source_documents", []),
                             "pipeline_version": "2.0"
                         },
                         "quality_assessment": quality_results
@@ -98,61 +98,61 @@ class RAGIntegrationService:
                 logger.error(f"RAG IEP creation error: {e}")
                 raise
     
-    def _prepare_rag_context(self, quantified_data: QuantifiedAssessmentData) -> Dict[str, Any]:
+    def _prepare_rag_context(self, quantified_data: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare quantified assessment data for RAG consumption"""
         
         # Extract key metrics for RAG
         context = {
             "assessment_summary": self._generate_assessment_summary(quantified_data),
-            "present_levels": self._format_present_levels_for_rag(quantified_data.standardized_plop),
+            "present_levels": self._format_present_levels_for_rag(quantified_data.get("standardized_plop")),
             "quantified_metrics": self._extract_quantified_metrics(quantified_data),
-            "priority_goals": quantified_data.priority_goals or [],
-            "service_recommendations": quantified_data.service_recommendations or [],
-            "learning_profile": quantified_data.learning_style_profile or {},
+            "priority_goals": quantified_data.get("priority_goals", []),
+            "service_recommendations": quantified_data.get("service_recommendations", []),
+            "learning_profile": quantified_data.get("learning_style_profile", {}),
             "eligibility_data": {
-                "category": quantified_data.eligibility_category,
-                "primary_disability": quantified_data.primary_disability,
-                "secondary_disabilities": quantified_data.secondary_disabilities or []
+                "category": quantified_data.get("eligibility_category"),
+                "primary_disability": quantified_data.get("primary_disability"),
+                "secondary_disabilities": quantified_data.get("secondary_disabilities", [])
             }
         }
         
         return context
     
-    def _generate_assessment_summary(self, quantified_data: QuantifiedAssessmentData) -> str:
+    def _generate_assessment_summary(self, quantified_data: Dict[str, Any]) -> str:
         """Generate a comprehensive assessment summary for RAG"""
         
         summary_parts = []
         
         # Cognitive summary
-        if quantified_data.cognitive_composite:
-            cognitive_level = self._interpret_composite_score(quantified_data.cognitive_composite)
+        if quantified_data.get("cognitive_composite"):
+            cognitive_level = self._interpret_composite_score(quantified_data["cognitive_composite"])
             summary_parts.append(f"Cognitive functioning is in the {cognitive_level} range")
         
         # Academic summary
         academic_areas = []
-        if quantified_data.reading_composite:
-            reading_level = self._interpret_composite_score(quantified_data.reading_composite)
+        if quantified_data.get("reading_composite"):
+            reading_level = self._interpret_composite_score(quantified_data["reading_composite"])
             academic_areas.append(f"reading ({reading_level})")
         
-        if quantified_data.math_composite:
-            math_level = self._interpret_composite_score(quantified_data.math_composite)
+        if quantified_data.get("math_composite"):
+            math_level = self._interpret_composite_score(quantified_data["math_composite"])
             academic_areas.append(f"mathematics ({math_level})")
         
-        if quantified_data.writing_composite:
-            writing_level = self._interpret_composite_score(quantified_data.writing_composite)
+        if quantified_data.get("writing_composite"):
+            writing_level = self._interpret_composite_score(quantified_data["writing_composite"])
             academic_areas.append(f"written expression ({writing_level})")
         
         if academic_areas:
             summary_parts.append(f"Academic performance: {', '.join(academic_areas)}")
         
         # Behavioral summary
-        if quantified_data.behavioral_composite:
-            behavioral_level = self._interpret_composite_score(quantified_data.behavioral_composite)
+        if quantified_data.get("behavioral_composite"):
+            behavioral_level = self._interpret_composite_score(quantified_data["behavioral_composite"])
             summary_parts.append(f"Behavioral functioning shows {behavioral_level} patterns")
         
         # Growth summary
-        if quantified_data.growth_rate:
-            growth_summary = self._summarize_growth_patterns(quantified_data.growth_rate)
+        if quantified_data.get("growth_rate"):
+            growth_summary = self._summarize_growth_patterns(quantified_data["growth_rate"])
             summary_parts.append(growth_summary)
         
         return ". ".join(summary_parts) + "."
@@ -203,22 +203,22 @@ class RAGIntegrationService:
         
         return formatted
     
-    def _extract_quantified_metrics(self, quantified_data: QuantifiedAssessmentData) -> Dict[str, Any]:
+    def _extract_quantified_metrics(self, quantified_data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract key quantified metrics for RAG"""
         
         metrics = {
             "composite_scores": {
-                "cognitive": quantified_data.cognitive_composite,
-                "academic": quantified_data.academic_composite,
-                "behavioral": quantified_data.behavioral_composite,
-                "reading": quantified_data.reading_composite,
-                "math": quantified_data.math_composite,
-                "writing": quantified_data.writing_composite
+                "cognitive": quantified_data.get("cognitive_composite"),
+                "academic": quantified_data.get("academic_composite"),
+                "behavioral": quantified_data.get("behavioral_composite"),
+                "reading": quantified_data.get("reading_composite"),
+                "math": quantified_data.get("math_composite"),
+                "writing": quantified_data.get("writing_composite")
             },
-            "growth_indicators": quantified_data.progress_indicators or [],
-            "processing_profile": quantified_data.cognitive_processing_profile or {},
-            "learning_style": quantified_data.learning_style_profile or {},
-            "confidence_metrics": quantified_data.confidence_metrics or {}
+            "growth_indicators": quantified_data.get("progress_indicators", []),
+            "processing_profile": quantified_data.get("cognitive_processing_profile", {}),
+            "learning_style": quantified_data.get("learning_style_profile", {}),
+            "confidence_metrics": quantified_data.get("confidence_metrics", {})
         }
         
         # Remove None values
@@ -401,64 +401,67 @@ class RAGIntegrationService:
         
         return " ".join(text_parts)
     
-    def _prepare_source_documents(self, quantified_data: QuantifiedAssessmentData) -> List[str]:
+    def _prepare_source_documents(self, quantified_data: Dict[str, Any]) -> List[str]:
         """Prepare source documents for regurgitation detection"""
         
         source_documents = []
         
         # Add source documents if available
-        if quantified_data.source_documents:
-            if isinstance(quantified_data.source_documents, list):
-                source_documents.extend(quantified_data.source_documents)
-            elif isinstance(quantified_data.source_documents, str):
-                source_documents.append(quantified_data.source_documents)
+        source_docs = quantified_data.get("source_documents")
+        if source_docs:
+            if isinstance(source_docs, list):
+                source_documents.extend(source_docs)
+            elif isinstance(source_docs, str):
+                source_documents.append(source_docs)
         
         # Add standardized PLOP content
-        if quantified_data.standardized_plop:
-            plop_text = self._flatten_content_to_text(quantified_data.standardized_plop)
+        standardized_plop = quantified_data.get("standardized_plop")
+        if standardized_plop:
+            plop_text = self._flatten_content_to_text(standardized_plop)
             if plop_text:
                 source_documents.append(plop_text)
         
         # Add assessment narrative if available
-        if hasattr(quantified_data, 'assessment_narrative') and quantified_data.assessment_narrative:
-            source_documents.append(quantified_data.assessment_narrative)
+        assessment_narrative = quantified_data.get("assessment_narrative")
+        if assessment_narrative:
+            source_documents.append(assessment_narrative)
         
         return source_documents
     
-    def _format_quantified_data_for_quality_check(self, quantified_data: QuantifiedAssessmentData) -> Dict[str, Any]:
+    def _format_quantified_data_for_quality_check(self, quantified_data: Dict[str, Any]) -> Dict[str, Any]:
         """Format quantified data for quality validation"""
         
         return {
             "academic_metrics": {
                 "reading": {
-                    "overall_rating": quantified_data.reading_composite,
-                    "grade_equivalent": getattr(quantified_data, 'reading_grade_equivalent', None)
+                    "overall_rating": quantified_data.get("reading_composite"),
+                    "grade_equivalent": quantified_data.get("reading_grade_equivalent")
                 },
                 "mathematics": {
-                    "overall_rating": quantified_data.math_composite,
-                    "grade_equivalent": getattr(quantified_data, 'math_grade_equivalent', None)
+                    "overall_rating": quantified_data.get("math_composite"),
+                    "grade_equivalent": quantified_data.get("math_grade_equivalent")
                 },
                 "writing": {
-                    "overall_rating": quantified_data.writing_composite,
-                    "grade_equivalent": getattr(quantified_data, 'writing_grade_equivalent', None)
+                    "overall_rating": quantified_data.get("writing_composite"),
+                    "grade_equivalent": quantified_data.get("writing_grade_equivalent")
                 }
             },
             "behavioral_metrics": {
                 "attention_focus": {
-                    "rating": getattr(quantified_data, 'attention_rating', None)
+                    "rating": quantified_data.get("attention_rating")
                 },
                 "social_emotional": {
-                    "rating": getattr(quantified_data, 'social_emotional_rating', None)
+                    "rating": quantified_data.get("social_emotional_rating")
                 }
             },
             "grade_level_performance": {
                 "overall": {
-                    "grade_equivalent": getattr(quantified_data, 'overall_grade_equivalent', None),
-                    "percentile": getattr(quantified_data, 'overall_percentile', None)
+                    "grade_equivalent": quantified_data.get("overall_grade_equivalent"),
+                    "percentile": quantified_data.get("overall_percentile")
                 }
             },
             "strengths_and_needs": {
-                "strengths": quantified_data.priority_goals or [],
-                "needs": getattr(quantified_data, 'identified_needs', [])
+                "strengths": quantified_data.get("priority_goals", []),
+                "needs": quantified_data.get("identified_needs", [])
             }
         }

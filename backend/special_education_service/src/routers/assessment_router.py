@@ -33,8 +33,11 @@ async def create_assessment_document(
         document_dict = document_data.model_dump()
         created_document = await assessment_repo.create_assessment_document(document_dict)
         return AssessmentDocumentResponse(**created_document)
+    except HTTPException:
+        # Re-raise HTTPException from repository as-is (400, 422, etc)
+        raise
     except Exception as e:
-        logger.error(f"Error creating assessment document: {e}")
+        logger.error(f"Unexpected error creating assessment document: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create assessment document"
@@ -197,27 +200,48 @@ async def get_student_assessment_summary(
     student_id: UUID,
     assessment_repo: AssessmentRepository = Depends(get_assessment_repository)
 ):
-    """Get comprehensive assessment summary for a student"""
+    """Get comprehensive assessment summary for a student with graceful degradation"""
+    from ..utils.safe_db_operations import safe_list_operation, get_database_health
+    
     try:
-        # Get all assessment data for the student
-        documents = await assessment_repo.get_student_assessment_documents(student_id)
-        scores = await assessment_repo.get_student_psychoed_scores(student_id)
-        quantified_data = await assessment_repo.get_student_quantified_data(student_id)
+        # Each operation wrapped individually - partial failure doesn't kill everything
+        documents = await safe_list_operation(
+            assessment_repo.get_student_assessment_documents, 
+            student_id,
+            operation_name="get_student_assessment_documents"
+        )
+        
+        scores = await safe_list_operation(
+            assessment_repo.get_student_psychoed_scores, 
+            student_id,
+            operation_name="get_student_psychoed_scores"
+        )
+        
+        quantified_data = await safe_list_operation(
+            assessment_repo.get_student_quantified_data, 
+            student_id,
+            operation_name="get_student_quantified_data"
+        )
+        
+        # Get database health for monitoring
+        db_health = get_database_health()
         
         return {
             "student_id": str(student_id),
             "assessment_documents": [AssessmentDocumentResponse(**doc) for doc in documents],
-            "psychoed_scores": [PsychoedScoreResponse(**score) for score in scores],
-            "quantified_data": [QuantifiedAssessmentDataResponse(**data) for data in quantified_data],
+            "psychoed_scores": [PsychoedScoreResponse(**score) for score in scores] if scores else [],
+            "quantified_data": [QuantifiedAssessmentDataResponse(**data) for data in quantified_data] if quantified_data else [],
             "summary": {
                 "total_documents": len(documents),
                 "total_scores": len(scores),
                 "quantified_assessments": len(quantified_data),
-                "latest_assessment": documents[0]["assessment_date"] if documents else None
+                "latest_assessment": documents[0]["assessment_date"] if documents else None,
+                "database_status": db_health["status"],
+                "migration_needed": db_health["migration_needed"]
             }
         }
     except Exception as e:
-        logger.error(f"Error getting student assessment summary: {e}")
+        logger.error(f"Unexpected error in assessment summary: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve student assessment summary"

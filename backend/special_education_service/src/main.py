@@ -10,7 +10,7 @@ from .routers import (
     observability_router, monitoring_router, async_jobs_router, assessment_router
 )
 # from .middleware.error_handler import ErrorHandlerMiddleware, add_request_id_middleware
-# from .middleware.session_middleware import RequestScopedSessionMiddleware
+from .middleware.session_middleware import RequestScopedSessionMiddleware
 # from .monitoring.middleware import MonitoringMiddleware
 # from .monitoring.health_monitor import health_monitor
 from common.src.config import get_settings
@@ -59,7 +59,7 @@ app = FastAPI(
 
 # Add middleware (order matters - session middleware should be early)
 # app.add_middleware(MonitoringMiddleware)  # Monitor all requests
-# app.add_middleware(RequestScopedSessionMiddleware)
+app.add_middleware(RequestScopedSessionMiddleware)
 # app.middleware("http")(add_request_id_middleware)
 # app.add_middleware(ErrorHandlerMiddleware)
 
@@ -88,10 +88,63 @@ app.include_router(async_jobs_router)   # Fixed response_model issues
 app.include_router(assessment_router)
 
 # Include advanced features
-# from .routers import advanced_iep_router  # Temporarily disabled for debugging
-# app.include_router(advanced_iep_router.router)  # Temporarily disabled for debugging
+logger.info("🔧 Starting advanced IEP router registration...")
+try:
+    logger.info("🔧 Importing advanced IEP router...")
+    from .routers import advanced_iep_router
+    logger.info("🔧 Advanced IEP router imported successfully")
+    
+    logger.info("🔧 Registering advanced IEP router...")
+    app.include_router(advanced_iep_router.router)
+    logger.info(f"✅ Advanced IEP router loaded successfully with {len(advanced_iep_router.router.routes)} routes")
+    logger.info(f"✅ Advanced router prefix: {advanced_iep_router.router.prefix}")
+    
+    # Log specific routes for debugging
+    for route in advanced_iep_router.router.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            logger.info(f"   Route: {list(route.methods)} {route.path}")
+            
+except ImportError as e:
+    logger.error(f"❌ Failed to import advanced IEP router: {e}")
+    import traceback
+    logger.error(f"Import traceback: {traceback.format_exc()}")
+except Exception as e:
+    logger.error(f"❌ Error registering advanced IEP router: {e}")
+    import traceback
+    logger.error(f"Registration traceback: {traceback.format_exc()}")
 
 from typing import Dict, Any
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize resources and validate schema on startup"""
+    try:
+        logger.info("🚀 Starting Special Education Service with schema validation")
+        
+        # Test database connection
+        if not await check_database_connection():
+            logger.error("Failed to connect to database")
+            raise RuntimeError("Database connection failed")
+        
+        # Validate database schema
+        from .utils.schema_validation import validate_startup_schema
+        from .database import engine
+        
+        try:
+            schema_results = await validate_startup_schema(engine)
+            if schema_results['status'] == 'valid':
+                logger.info("✅ Database schema validation passed")
+            else:
+                logger.warning(f"⚠️ Database schema validation warnings: {schema_results.get('warnings', [])}")
+        except Exception as schema_error:
+            logger.error(f"❌ Database schema validation failed: {schema_error}")
+            # Don't fail startup for schema issues - graceful degradation will handle it
+            logger.warning("⚠️ Starting with schema issues - some features may be degraded")
+        
+        logger.info("✅ Startup completed successfully")
+    except Exception as e:
+        logger.error(f"❌ Startup failed: {e}")
+        raise
 
 @app.get("/health", response_model=Dict[str, Any])
 async def health_check():
@@ -129,6 +182,41 @@ async def root():
             "RAG-powered Content Generation",
             "Workflow Integration"
         ]
+    }
+
+@app.get("/debug/routes", response_model=Dict[str, Any])
+async def debug_routes():
+    """Debug endpoint to list all registered routes"""
+    routes = []
+    for route in app.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            routes.append({
+                "path": route.path,
+                "methods": list(route.methods),
+                "name": getattr(route, 'name', 'unknown')
+            })
+    return {
+        "total_routes": len(routes),
+        "routes": routes,
+        "advanced_routes": [r for r in routes if "advanced" in r["path"]]
+    }
+
+@app.get("/debug/circuit-breaker", response_model=Dict[str, Any])
+async def debug_circuit_breaker():
+    """Debug endpoint to check circuit breaker status"""
+    from .utils.schema_validation import get_circuit_breaker
+    
+    circuit_breaker = get_circuit_breaker()
+    status = circuit_breaker.get_status()
+    
+    return {
+        "circuit_breaker": status,
+        "health": "healthy" if status["state"] == "CLOSED" else "degraded",
+        "recommendation": {
+            "CLOSED": "Assessment operations are working normally",
+            "OPEN": "Assessment operations are disabled due to repeated schema errors. Please run database migrations: alembic upgrade head",
+            "HALF_OPEN": "Assessment operations are being tested after failure recovery"
+        }.get(status["state"], "Unknown state")
     }
 
 # Entry point for running directly

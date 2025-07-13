@@ -5,12 +5,15 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, and_, or_, desc
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError, StatementError
 from datetime import datetime
+from fastapi import HTTPException
 
 from ..models.special_education_models import (
     AssessmentDocument, PsychoedScore, ExtractedAssessmentData, 
     QuantifiedAssessmentData, Student
 )
+from ..common.enums import AssessmentType
 
 logger = logging.getLogger(__name__)
 
@@ -23,21 +26,51 @@ class AssessmentRepository:
     # Assessment Document operations
     async def create_assessment_document(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new assessment document"""
+        logger.info(f"Creating assessment document with data: {document_data}")
         try:
             # Convert string IDs to UUIDs if needed
             if isinstance(document_data.get("student_id"), str):
                 document_data["student_id"] = UUID(document_data["student_id"])
+                logger.info(f"Converted student_id to UUID: {document_data['student_id']}")
             
+            # Convert string document_type to enum if needed
+            if isinstance(document_data.get("document_type"), str):
+                try:
+                    document_data["document_type"] = AssessmentType(document_data["document_type"])
+                    logger.info(f"Converted document_type to enum: {document_data['document_type']}")
+                except ValueError as exc:
+                    logger.error(f"Invalid assessment type: {document_data['document_type']}")
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Invalid assessment type '{document_data['document_type']}'. Valid types: {[e.value for e in AssessmentType]}"
+                    ) from exc
+            
+            logger.info(f"Creating AssessmentDocument with final data: {document_data}")
             assessment_doc = AssessmentDocument(**document_data)
             self.db.add(assessment_doc)
             await self.db.commit()
             await self.db.refresh(assessment_doc)
             
-            return self._assessment_document_to_dict(assessment_doc)
+            result = self._assessment_document_to_dict(assessment_doc)
+            logger.info(f"Successfully created assessment document: {result['id']}")
+            return result
+        except HTTPException:
+            await self.db.rollback()
+            raise  # Re-raise HTTPException as-is
+        except (IntegrityError, StatementError) as exc:
+            await self.db.rollback()
+            logger.error("Database constraint violation during assessment document creation", exc_info=exc)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Database constraint violation: {str(exc)}"
+            ) from exc
         except Exception as e:
             await self.db.rollback()
-            logger.error(f"Error creating assessment document: {e}")
-            raise
+            logger.error(f"Unexpected error creating assessment document: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Unexpected error: {str(e)}"
+            ) from e
     
     async def get_assessment_document(self, document_id: UUID) -> Optional[Dict[str, Any]]:
         """Get assessment document by ID"""
@@ -141,8 +174,12 @@ class AssessmentRepository:
         student_id: UUID, 
         test_name: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get psychoeducational scores for a student"""
-        try:
+        """Get psychoeducational scores for a student with circuit breaker protection"""
+        from ..utils.schema_validation import get_circuit_breaker
+        
+        circuit_breaker = get_circuit_breaker()
+        
+        async def _get_scores():
             # Join with AssessmentDocument to filter by student
             stmt = (
                 select(PsychoedScore)
@@ -159,9 +196,11 @@ class AssessmentRepository:
             scores = result.scalars().all()
             
             return [self._psychoed_score_to_dict(score) for score in scores]
-        except Exception as e:
-            logger.error(f"Error getting student psychoed scores for {student_id}: {e}")
-            raise
+        
+        return await circuit_breaker.call(
+            _get_scores, 
+            operation_name=f"get_student_psychoed_scores_{student_id}"
+        )
     
     # Extracted Assessment Data operations
     async def create_extracted_assessment_data(self, extracted_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -216,8 +255,12 @@ class AssessmentRepository:
             raise
     
     async def get_student_quantified_data(self, student_id: UUID) -> List[Dict[str, Any]]:
-        """Get all quantified assessment data for a student"""
-        try:
+        """Get all quantified assessment data for a student with circuit breaker protection"""
+        from ..utils.schema_validation import get_circuit_breaker
+        
+        circuit_breaker = get_circuit_breaker()
+        
+        async def _get_quantified_data():
             stmt = (
                 select(QuantifiedAssessmentData)
                 .where(QuantifiedAssessmentData.student_id == student_id)
@@ -227,9 +270,11 @@ class AssessmentRepository:
             quantified_data = result.scalars().all()
             
             return [self._quantified_assessment_data_to_dict(data) for data in quantified_data]
-        except Exception as e:
-            logger.error(f"Error getting student quantified data for {student_id}: {e}")
-            raise
+        
+        return await circuit_breaker.call(
+            _get_quantified_data, 
+            operation_name=f"get_student_quantified_data_{student_id}"
+        )
     
     async def get_quantified_assessment_data(self, data_id: UUID) -> Optional[Dict[str, Any]]:
         """Get quantified assessment data by ID"""
