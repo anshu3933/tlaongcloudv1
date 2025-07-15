@@ -61,7 +61,8 @@ class PsychoedScoreBase(BaseModel):
     percentile_rank: Optional[int] = Field(None, ge=1, le=99)
     scaled_score: Optional[int] = None
     grade_equivalent: Optional[str] = Field(None, max_length=10)
-    age_equivalent: Optional[str] = Field(None, max_length=10)
+    age_equivalent_years: Optional[int] = None
+    age_equivalent_months: Optional[int] = None
     confidence_interval_lower: Optional[int] = None
     confidence_interval_upper: Optional[int] = None
     confidence_level: int = Field(95, ge=90, le=99)

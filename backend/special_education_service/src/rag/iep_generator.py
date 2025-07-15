@@ -4,7 +4,7 @@ import asyncio
 from google import genai
 from google.genai import types
 
-from common.src.vector_store import VectorStore
+from ..vector_store import VectorStore
 
 class IEPGenerator:
     def __init__(self, vector_store: VectorStore, settings):

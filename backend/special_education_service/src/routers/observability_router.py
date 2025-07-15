@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 from ..database import get_db, check_database_connection
-from common.src.config import get_settings
+from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/observability", tags=["Observability"])

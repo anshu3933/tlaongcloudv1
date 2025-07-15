@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import logging
 
-from common.src.config import get_settings
+from .config import get_settings
 from .models.special_education_models import Base
 
 logger = logging.getLogger(__name__)

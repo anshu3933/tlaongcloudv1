@@ -8,6 +8,9 @@ from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel, Field
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import get_settings
 from document_processor import DocumentProcessor
 from vector_store import VectorStore

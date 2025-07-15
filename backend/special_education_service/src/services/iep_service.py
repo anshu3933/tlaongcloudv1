@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any
 from uuid import UUID
 import json
 
-from common.src.vector_store import VectorStore
+from ..vector_store import VectorStore
 from ..repositories.iep_repository import IEPRepository
 from ..repositories.pl_repository import PLRepository
 from ..rag.iep_generator import IEPGenerator

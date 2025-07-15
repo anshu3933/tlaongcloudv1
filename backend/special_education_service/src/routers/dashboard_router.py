@@ -18,7 +18,7 @@ from ..services.user_adapter import UserAdapter
 from ..schemas.student_schemas import StudentResponse
 from ..schemas.iep_schemas import IEPResponse
 from ..schemas.common_schemas import SuccessResponse
-from common.src.config import get_settings
+from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/dashboard", tags=["Dashboard BFF"])

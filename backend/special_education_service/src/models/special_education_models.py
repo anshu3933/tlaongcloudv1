@@ -314,7 +314,8 @@ class PsychoedScore(Base):
     percentile_rank = Column(Integer)
     scaled_score = Column(Integer)
     grade_equivalent = Column(String(10))  # "3.5", "K.2", etc.
-    age_equivalent = Column(String(10))   # "8:3", "12:11", etc.
+    age_equivalent_years = Column(Integer)  # Years component
+    age_equivalent_months = Column(Integer)  # Months component
     
     # Confidence and reliability
     confidence_interval_lower = Column(Integer)

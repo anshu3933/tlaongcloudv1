@@ -13,7 +13,7 @@ from .routers import (
 from .middleware.session_middleware import RequestScopedSessionMiddleware
 # from .monitoring.middleware import MonitoringMiddleware
 # from .monitoring.health_monitor import health_monitor
-from common.src.config import get_settings
+from .config import get_settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -157,7 +157,7 @@ async def health_check():
             "service": "special-education",
             "version": "1.0.0",
             "database": "connected" if db_connected else "disconnected",
-            "environment": settings.environment
+            "environment": settings.ENVIRONMENT
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")

@@ -254,8 +254,8 @@ class SQLiteAsyncWorker:
             from ..repositories.pl_repository import PLRepository
             from ..services.iep_service import IEPService
             from ..rag.iep_generator import IEPGenerator
-            from common.src.vector_store import VectorStore
-            from common.src.config import get_settings
+            from ..vector_store import VectorStore
+            from ..config import get_settings
             
             settings = get_settings()
             

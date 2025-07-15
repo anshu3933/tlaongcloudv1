@@ -70,7 +70,7 @@ async def create_embeddings_local(texts: List[str]) -> List[List[float]]:
         # Initialize client
         client = genai.Client(
             vertexai=True,
-            project="default-project",  # Will be overridden by environment
+            project="thela002",  # Correct project ID
             location="us-central1"
         )
         
@@ -102,7 +102,7 @@ async def create_embeddings_local(texts: List[str]) -> List[List[float]]:
                 logger.warning(f"Error with batch {i//batch_size + 1}: {e}")
                 # Add dummy embeddings as fallback
                 for _ in batch:
-                    embeddings.append([0.0] * 768)  # Standard embedding dimension
+                    embeddings.append([0.0] * 768)  # text-embedding-004 dimension
         
         logger.info(f"✅ Created {len(embeddings)} embeddings")
         return embeddings
@@ -302,9 +302,12 @@ async def test_rag_retrieval():
             logger.info(f"🔍 Testing query: '{query}'")
             
             try:
-                # For testing, just do a simple search
+                # Create embedding for query using the same service
+                query_embedding = await create_embeddings_local([query])
+                
+                # Search using the embedding
                 results = collection.query(
-                    query_texts=[query],
+                    query_embeddings=[query_embedding[0]],
                     n_results=3
                 )
                 

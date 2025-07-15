@@ -128,6 +128,24 @@ class AssessmentRepository:
             raise
     
     # Psychoeducational Score operations
+    async def create_psychoed_score(self, score_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a single psychoeducational score"""
+        try:
+            # Convert string IDs to UUIDs if needed
+            if isinstance(score_data.get("document_id"), str):
+                score_data["document_id"] = UUID(score_data["document_id"])
+            
+            score = PsychoedScore(**score_data)
+            self.db.add(score)
+            await self.db.commit()
+            await self.db.refresh(score)
+            
+            return self._psychoed_score_to_dict(score)
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"Error creating psychoed score: {e}")
+            raise
+
     async def create_psychoed_scores_batch(self, scores_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Create multiple psychoeducational scores"""
         try:
@@ -326,7 +344,8 @@ class AssessmentRepository:
             "percentile_rank": score.percentile_rank,
             "scaled_score": score.scaled_score,
             "grade_equivalent": score.grade_equivalent,
-            "age_equivalent": score.age_equivalent,
+            "age_equivalent_years": score.age_equivalent_years,
+            "age_equivalent_months": score.age_equivalent_months,
             "confidence_interval_lower": score.confidence_interval_lower,
             "confidence_interval_upper": score.confidence_interval_upper,
             "confidence_level": score.confidence_level,

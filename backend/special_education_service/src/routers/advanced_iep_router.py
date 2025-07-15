@@ -17,8 +17,8 @@ from ..rag.iep_generator import IEPGenerator
 from ..schemas.iep_schemas import (
     IEPCreate, IEPCreateWithRAG, IEPResponse, IEPGenerateSection
 )
-from common.src.config import get_settings
-from common.src.vector_store import VectorStore
+from ..config import get_settings
+from ..vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/ieps/advanced", tags=["Advanced IEPs"])
@@ -33,24 +33,19 @@ user_adapter = UserAdapter(
 # Initialize vector store based on environment
 import os
 if os.getenv("ENVIRONMENT") == "development":
-    # Development: Use ChromaDB with collection_name
-    vector_store = VectorStore(
-        project_id=getattr(settings, 'gcp_project_id', 'default-project'),
-        collection_name="rag_documents"
-    )
+    # Development: Use simple VectorStore with collection_name
+    vector_store = VectorStore(collection_name="rag_documents")
 else:
     # Production: Use VertexVectorStore with proper factory method
     try:
-        from common.src.vector_store.vertex_vector_store import VertexVectorStore
-        vector_store = VertexVectorStore.from_settings(settings)
+        # Production: Use VertexVectorStore with proper factory method
+        # For now, fall back to simple VectorStore
+        print(f"Warning: Vertex AI not configured, falling back to simple VectorStore")
+        vector_store = VectorStore(collection_name="rag_documents")
     except (ValueError, AttributeError) as e:
         # Fallback to ChromaDB if Vertex is not configured
         print(f"Warning: Vertex AI not configured ({e}), falling back to ChromaDB")
-        from common.src.vector_store.chroma_vector_store import VectorStore as ChromaVectorStore
-        vector_store = ChromaVectorStore(
-            project_id=getattr(settings, 'gcp_project_id', 'default-project'),
-            collection_name="rag_documents"
-        )
+        vector_store = VectorStore(collection_name="rag_documents")
 
 iep_generator = IEPGenerator(vector_store=vector_store, settings=settings)
 

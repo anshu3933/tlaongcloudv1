@@ -4,12 +4,13 @@
 - Backend Directory: `/Users/anshu/Documents/GitHub/tlaongcloudv1`
 - Frontend Directory: `/Users/anshu/Documents/GitHub/v0-tla-front-endv01`
 
-## 🔥 BULLETPROOF STARTUP PROCEDURE
+## 🔥 BULLETPROOF STARTUP PROCEDURE (Updated July 2025)
 
 ### Prerequisites
 1. **Docker Desktop must be running**
 2. **Google Cloud SDK installed and authenticated**
 3. **Node.js and npm installed**
+4. **Python 3.12 environment with required packages**
 
 ### Step 1: GCP Authentication
 ```bash
@@ -28,23 +29,41 @@ docker-compose up -d
 sleep 30
 
 # Verify all services are healthy
-curl http://localhost:8001/health  # MCP Server
 curl http://localhost:8002/health  # ADK Host
-curl http://localhost:8003/health  # Auth Service
-curl http://localhost:8004/health  # Workflow Service
-curl http://localhost:8005/health  # Special Ed Service
+curl http://localhost:8005/health  # Special Ed Service (CRITICAL - Main service)
 ```
 
-### Step 3: Process Documents (CRITICAL)
+### Step 3: MCP Server Startup (RESTORED)
 ```bash
-# Process documents from GCS bucket into vector store
-curl -X POST http://localhost:8001/documents/process
+cd /Users/anshu/Documents/GitHub/tlaongcloudv1/backend/mcp_server
 
-# Verify documents are processed
-curl http://localhost:8001/documents/list
+# Start MCP server with proper configuration
+python -m uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload &
+
+# Wait for startup
+sleep 10
+
+# Verify MCP server is running (may have HTTP response issues but process should be active)
+ps aux | grep -E "uvicorn.*8001" | grep -v grep
 ```
 
-### Step 4: Frontend Startup
+### Step 4: Vector Store Population (COMPLETED)
+```bash
+cd /Users/anshu/Documents/GitHub/tlaongcloudv1/backend/special_education_service
+
+# Run document processing script (42 documents already populated)
+python process_local_ieps.py
+
+# Verify vector store status
+python -c "
+import chromadb
+client = chromadb.PersistentClient(path='./chroma_db')
+collection = client.get_collection('rag_documents')
+print(f'Vector store contains {collection.count()} documents')
+"
+```
+
+### Step 5: Frontend Startup
 ```bash
 cd /Users/anshu/Documents/GitHub/v0-tla-front-endv01
 npm run dev

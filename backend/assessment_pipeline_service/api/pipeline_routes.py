@@ -28,8 +28,7 @@ orchestrator = AssessmentPipelineOrchestrator()
 @router.post("/execute-complete", response_model=dict)
 async def execute_complete_pipeline(
     request: Dict[str, Any],
-    background_tasks: BackgroundTasks,
-    current_user: Dict[str, Any] = Depends(require_teacher_or_above())
+    background_tasks: BackgroundTasks
 ):
     """Execute the complete assessment pipeline from documents to IEP"""
     
@@ -46,7 +45,7 @@ async def execute_complete_pipeline(
         if not assessment_documents:
             raise HTTPException(status_code=400, detail="assessment_documents are required")
         
-        logger.info(f"Starting complete pipeline for student {student_id} by user {current_user.get('sub', 'unknown')}")
+        logger.info(f"Starting complete pipeline for student {student_id} (no auth)")
         
         # Convert documents to DTOs
         document_dtos = [
@@ -86,8 +85,7 @@ async def execute_complete_pipeline(
 
 @router.post("/execute-partial", response_model=dict)
 async def execute_partial_pipeline(
-    request: Dict[str, Any],
-    current_user: Dict[str, Any] = Depends(require_teacher_or_above())
+    request: Dict[str, Any]
 ):
     """Execute a partial pipeline (specific stages only)"""
     
@@ -103,7 +101,7 @@ async def execute_partial_pipeline(
                 detail="student_id, start_stage, and end_stage are required"
             )
         
-        logger.info(f"Starting partial pipeline for student {student_id}: {start_stage} to {end_stage} by user {current_user.get('sub', 'unknown')}")
+        logger.info(f"Starting partial pipeline for student {student_id}: {start_stage} to {end_stage} (no auth)")
         
         result = await orchestrator.execute_partial_pipeline(
             student_id=student_id,
@@ -124,8 +122,7 @@ async def execute_partial_pipeline(
 
 @router.get("/status/{pipeline_id}", response_model=dict)
 async def get_pipeline_status(
-    pipeline_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    pipeline_id: str
 ):
     """Get current status of a pipeline run"""
     
@@ -142,8 +139,7 @@ async def get_pipeline_status(
 
 @router.post("/validate-inputs", response_model=dict)
 async def validate_pipeline_inputs(
-    request: Dict[str, Any],
-    current_user: Dict[str, Any] = Depends(require_teacher_or_above())
+    request: Dict[str, Any]
 ):
     """Validate inputs before starting pipeline"""
     

@@ -14,7 +14,7 @@ from ..schemas.template_schemas import (
     IEPTemplateCreate, IEPTemplateUpdate, IEPTemplateResponse, DisabilityTypeCreate, DisabilityTypeResponse
 )
 from ..schemas.common_schemas import PaginatedResponse, SuccessResponse
-from common.src.config import get_settings
+from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/templates", tags=["Templates"])
