@@ -15,7 +15,7 @@ os.environ.update({
     "JWT_SECRET_KEY": "test-key", 
     "GCP_PROJECT_ID": "test-project",
     "GCS_BUCKET_NAME": "test-bucket",
-    "GEMINI_MODEL": "gemini-1.5-pro",
+    "GEMINI_MODEL": "gemini-2.5-flash",
     "SMTP_ENABLED": "false",
     "SMTP_USERNAME": "test@example.com",
     "SMTP_FROM_EMAIL": "test@example.com"

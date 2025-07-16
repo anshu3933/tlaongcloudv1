@@ -33,9 +33,9 @@ class GeminiClient:
             exclude=[ValueError, json.JSONDecodeError]  # Don't trip on validation errors
         )
         
-        # Model configuration for Gemini 2.0 Flash
+        # Model configuration for Gemini 2.5 Flash
         self.model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash-exp",
+            model_name="gemini-2.5-flash",
             generation_config={
                 "temperature": 0.7,
                 "top_p": 0.95,
@@ -244,7 +244,7 @@ class GeminiClient:
             "generation_metadata": {
                 "generated_at": "2025-01-15T10:30:00Z",
                 "schema_version": "1.0",
-                "model": "gemini-2.0-flash-exp"
+                "model": "gemini-2.5-flash"
             }
         }
         

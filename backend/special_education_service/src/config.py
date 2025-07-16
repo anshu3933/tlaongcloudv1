@@ -21,7 +21,7 @@ class Settings(BaseModel):
     GCP_REGION: str = os.getenv("GCP_REGION", "us-central1")
     
     # AI Configuration
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
     
     # Email Configuration

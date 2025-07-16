@@ -150,7 +150,7 @@ DATABASE_URL=sqlite+aiosqlite:///./special_ed.db
 JWT_SECRET_KEY=your_secret_key
 GCP_PROJECT_ID=your_gcp_project
 GCS_BUCKET_NAME=your_bucket
-GEMINI_MODEL=gemini-1.5-pro
+GEMINI_MODEL=gemini-2.5-flash
 SMTP_ENABLED=false
 ```
 

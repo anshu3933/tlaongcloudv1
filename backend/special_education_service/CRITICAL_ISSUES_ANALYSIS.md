@@ -193,7 +193,7 @@ The service has fallback logic that returns demo responses when:
   "content": {
     "ai_generated": true,
     "generation_metadata": {
-      "model": "gemini-2.0-flash-exp",
+      "model": "gemini-2.5-flash",
       "tokens": 3885,
       "duration": 5.36
     }

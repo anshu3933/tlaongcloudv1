@@ -73,7 +73,7 @@ class ServiceSchema(StrictGeminiModel):
 class GenerationMetadataSchema(StrictGeminiModel):
     generated_at: str
     schema_version: str = "1.0"
-    model: str = "gemini-2.0-flash-exp"
+    model: str = "gemini-2.5-flash"
 
 
 class GeminiIEPResponse(StrictGeminiModel):

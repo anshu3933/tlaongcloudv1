@@ -286,7 +286,7 @@ class SQLiteAsyncWorker:
                 vector_store=vector_store,
                 project_id=getattr(settings, 'gcp_project_id', 'default-project'),
                 bucket_name=getattr(settings, 'gcs_bucket_name', 'default-bucket'),
-                model_name=getattr(settings, 'gemini_model', 'gemini-1.5-pro')
+                model_name=getattr(settings, 'gemini_model', 'gemini-2.5-flash')
             )
             
             # Initialize IEP service
