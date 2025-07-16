@@ -13,12 +13,12 @@ from ..repositories.pl_repository import PLRepository
 from ..services.iep_service import IEPService
 from ..services.user_adapter import UserAdapter
 from ..services.async_job_service import AsyncJobService
-from ..rag.iep_generator import IEPGenerator
+from ..rag.metadata_aware_iep_generator import MetadataAwareIEPGenerator
 from ..schemas.iep_schemas import (
     IEPCreate, IEPCreateWithRAG, IEPResponse, IEPGenerateSection
 )
 from ..config import get_settings
-from ..vector_store import VectorStore
+from ..vector_store_enhanced import EnhancedVectorStore
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/ieps/advanced", tags=["Advanced IEPs"])
@@ -30,24 +30,36 @@ user_adapter = UserAdapter(
     cache_ttl_seconds=300
 )
 
-# Initialize vector store based on environment
+# Initialize enhanced vector store and metadata-aware IEP generator
 import os
-if os.getenv("ENVIRONMENT") == "development":
-    # Development: Use simple VectorStore with collection_name
-    vector_store = VectorStore(collection_name="rag_documents")
-else:
-    # Production: Use VertexVectorStore with proper factory method
-    try:
-        # Production: Use VertexVectorStore with proper factory method
-        # For now, fall back to simple VectorStore
-        print(f"Warning: Vertex AI not configured, falling back to simple VectorStore")
-        vector_store = VectorStore(collection_name="rag_documents")
-    except (ValueError, AttributeError) as e:
-        # Fallback to ChromaDB if Vertex is not configured
-        print(f"Warning: Vertex AI not configured ({e}), falling back to ChromaDB")
-        vector_store = VectorStore(collection_name="rag_documents")
+logger.info("🔄 Initializing Enhanced RAG System with Metadata Intelligence...")
 
-iep_generator = IEPGenerator(vector_store=vector_store, settings=settings)
+try:
+    # Use enhanced vector store with metadata capabilities
+    enhanced_vector_store = EnhancedVectorStore(
+        persist_directory="./chromadb",
+        collection_name="enhanced_educational_docs"
+    )
+    logger.info("✅ Enhanced vector store initialized successfully")
+    
+    # Initialize metadata-aware IEP generator
+    metadata_aware_iep_generator = MetadataAwareIEPGenerator(
+        vector_store=enhanced_vector_store
+    )
+    logger.info("✅ Metadata-aware IEP generator initialized successfully")
+    logger.info("🚀 Enhanced RAG system ready with metadata intelligence, quality filtering, and evidence attribution")
+    
+except Exception as e:
+    logger.error(f"❌ Failed to initialize enhanced RAG system: {e}")
+    logger.warning("🔄 Falling back to basic vector store for compatibility")
+    
+    # Fallback to basic system if enhanced fails
+    from ..vector_store import VectorStore
+    from ..rag.iep_generator import IEPGenerator
+    
+    vector_store = VectorStore(collection_name="rag_documents")
+    metadata_aware_iep_generator = IEPGenerator(vector_store=vector_store, settings=settings)
+    logger.warning("⚠️ Using deprecated basic RAG system as fallback")
 
 async def get_iep_service(request: Request) -> IEPService:
     """Dependency to get IEP service with request-scoped session"""
@@ -55,15 +67,15 @@ async def get_iep_service(request: Request) -> IEPService:
     iep_repo = IEPRepository(db)
     pl_repo = PLRepository(db)
     
-    # Create mock clients for now - TODO: integrate with actual services
+    # Workflow and audit clients - TODO: integrate with actual services when available
     workflow_client = None
     audit_client = None
     
     return IEPService(
         repository=iep_repo,
         pl_repository=pl_repo,
-        vector_store=vector_store,
-        iep_generator=iep_generator,
+        vector_store=enhanced_vector_store,
+        iep_generator=metadata_aware_iep_generator,
         workflow_client=workflow_client,
         audit_client=audit_client
     )
@@ -388,11 +400,36 @@ async def find_similar_ieps(
 ):
     """Find similar IEPs using vector search"""
     try:
-        # Use the IEP generator's retrieval capability
-        similar_ieps = await iep_generator._retrieve_similar_ieps(
-            query=query_text,
-            top_k=top_k
+        # Use the enhanced metadata-aware generator's retrieval capability
+        # Note: This method needs to be implemented in MetadataAwareIEPGenerator
+        # For now, use enhanced search directly
+        from ..schemas.rag_metadata_schemas import SearchContext, IEPSection
+        
+        search_context = SearchContext(
+            target_iep_section=IEPSection.PRESENT_LEVELS,
+            quality_threshold=0.3,
+            max_results=top_k,
+            student_context={'student_id': str(student_id)},
+            boost_recent=True
         )
+        
+        similar_results = await enhanced_vector_store.enhanced_search(
+            query_text=query_text,
+            search_context=search_context,
+            n_results=top_k
+        )
+        
+        # Convert enhanced results to legacy format for compatibility
+        similar_ieps = [
+            {
+                "chunk_id": result.chunk_id,
+                "content": result.content,
+                "relevance_score": result.relevance_score,
+                "quality_score": result.quality_score,
+                "source_attribution": result.source_attribution
+            }
+            for result in similar_results
+        ]
         
         return similar_ieps
         

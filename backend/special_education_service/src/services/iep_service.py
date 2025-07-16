@@ -1,20 +1,24 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from uuid import UUID
 import json
 
-from ..vector_store import VectorStore
+from ..vector_store_enhanced import EnhancedVectorStore
 from ..repositories.iep_repository import IEPRepository
 from ..repositories.pl_repository import PLRepository
-from ..rag.iep_generator import IEPGenerator
+from ..rag.metadata_aware_iep_generator import MetadataAwareIEPGenerator
 from ..utils.retry import retry_iep_operation, ConflictDetector
+
+# Legacy import for backward compatibility
+from ..vector_store import VectorStore
+from ..rag.iep_generator import IEPGenerator
 
 class IEPService:
     def __init__(
         self,
         repository: IEPRepository,
         pl_repository: PLRepository,
-        vector_store: VectorStore,
-        iep_generator: IEPGenerator,
+        vector_store: Union[EnhancedVectorStore, VectorStore],
+        iep_generator: Union[MetadataAwareIEPGenerator, IEPGenerator],
         workflow_client,
         audit_client
     ):
@@ -24,6 +28,16 @@ class IEPService:
         self.iep_generator = iep_generator
         self.workflow_client = workflow_client
         self.audit_client = audit_client
+        
+        # Determine if using enhanced or legacy system
+        self.using_enhanced_rag = isinstance(iep_generator, MetadataAwareIEPGenerator)
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        if self.using_enhanced_rag:
+            logger.info("✅ IEP Service initialized with Enhanced RAG System (metadata-aware)")
+        else:
+            logger.warning("⚠️ IEP Service initialized with Legacy RAG System (deprecated)")
     
     async def create_iep_with_rag(
         self,
@@ -182,27 +196,66 @@ class IEPService:
         logger.info(f"📄 [BACKEND-SERVICE] Extracted student data for RAG: {student_data}")
         logger.info(f"📋 [BACKEND-SERVICE] Content data received keys: {list(content_data.keys()) if content_data else []}")
         
-        # Generate IEP content using RAG and Gemini
+        # Generate IEP content using Enhanced RAG system or legacy fallback
         try:
             rag_start = time.time()
-            logger.info(f"🧠 [BACKEND-SERVICE] Calling RAG generator...")
-            iep_content = await self.iep_generator.generate_iep(
-                template=template_data,
-                student_data=student_data,
-                previous_ieps=previous_ieps_data,
-                previous_assessments=previous_pls_data
-            )
-            rag_end = time.time()
-            logger.info(f"✅ [BACKEND-SERVICE] RAG generation completed successfully in {rag_end - rag_start:.2f}s with Gemini AI")
-            logger.info(f"📄 [BACKEND-SERVICE] Generated content sections: {list(iep_content.keys()) if isinstance(iep_content, dict) else 'non-dict response'}")
             
-            # Add metadata about generation method
-            iep_content.update({
-                "template_used": template_data.get("name", "Default IEP Template"),
-                "generation_method": "rag_powered_ai",
-                "ai_model": "gemini-2.5-flash",
-                "generated_at": str(initial_data.get("meeting_date", ""))
-            })
+            if self.using_enhanced_rag:
+                logger.info(f"🧠 [BACKEND-SERVICE] Calling Enhanced Metadata-Aware RAG generator...")
+                logger.info(f"🎯 [BACKEND-SERVICE] Using evidence-based generation with quality filtering and source attribution")
+                
+                # Use enhanced generation with metadata awareness
+                iep_response, evidence_metadata = await self.iep_generator.generate_enhanced_iep(
+                    student_data=student_data,
+                    template_data=template_data,
+                    generation_context={
+                        "previous_ieps": previous_ieps_data,
+                        "previous_assessments": previous_pls_data,
+                        "academic_year": academic_year,
+                        "user_context": {"user_id": user_id, "user_role": user_role}
+                    }
+                )
+                
+                # Convert enhanced response to legacy format
+                iep_content = iep_response.model_dump()
+                
+                # Add enhanced metadata
+                iep_content.update({
+                    "template_used": template_data.get("name", "Default IEP Template"),
+                    "generation_method": "enhanced_rag_metadata_aware",
+                    "ai_model": "gemini-2.5-flash",
+                    "generated_at": str(initial_data.get("meeting_date", "")),
+                    "evidence_metadata": evidence_metadata,
+                    "quality_score": evidence_metadata.get('quality_assessment', {}).get('overall_score', 0.0),
+                    "evidence_sources": evidence_metadata.get('total_evidence_chunks', 0),
+                    "confidence_scores": evidence_metadata.get('confidence_scores', {})
+                })
+                
+                logger.info(f"📊 [BACKEND-SERVICE] Enhanced generation quality score: {evidence_metadata.get('quality_assessment', {}).get('overall_score', 0.0):.3f}")
+                logger.info(f"📚 [BACKEND-SERVICE] Evidence sources used: {evidence_metadata.get('total_evidence_chunks', 0)}")
+                
+            else:
+                logger.warning(f"⚠️ [BACKEND-SERVICE] Using deprecated legacy RAG generator...")
+                
+                # Legacy generation method (deprecated)
+                iep_content = await self.iep_generator.generate_iep(
+                    template=template_data,
+                    student_data=student_data,
+                    previous_ieps=previous_ieps_data,
+                    previous_assessments=previous_pls_data
+                )
+                
+                # Add basic metadata
+                iep_content.update({
+                    "template_used": template_data.get("name", "Default IEP Template"),
+                    "generation_method": "legacy_rag_basic",
+                    "ai_model": "gemini-2.5-flash",
+                    "generated_at": str(initial_data.get("meeting_date", ""))
+                })
+            
+            rag_end = time.time()
+            logger.info(f"✅ [BACKEND-SERVICE] RAG generation completed successfully in {rag_end - rag_start:.2f}s")
+            logger.info(f"📄 [BACKEND-SERVICE] Generated content sections: {list(iep_content.keys()) if isinstance(iep_content, dict) else 'non-dict response'}")
             
         except Exception as e:
             rag_end = time.time()

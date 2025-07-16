@@ -18,7 +18,8 @@ import json
 import asyncio
 from datetime import datetime
 import numpy as np
-from collections import defaultdict
+import re
+from collections import defaultdict, Counter
 
 from .schemas.rag_metadata_schemas import (
     ChunkLevelMetadata, DocumentLevelMetadata, SearchContext,
@@ -224,23 +225,26 @@ class EnhancedVectorStore:
     async def _build_metadata_filters(self, search_context: SearchContext) -> Optional[Dict]:
         """Build ChromaDB where filters from search context"""
         
-        filters = {}
+        # ChromaDB requires filters to be combined with $and if multiple conditions
+        filters = []
         
         # Document type filters
         if search_context.document_types:
-            filters["document_type"] = {
-                "$in": [dt.value for dt in search_context.document_types]
-            }
+            filters.append({
+                "document_type": {"$in": [dt.value for dt in search_context.document_types]}
+            })
         
-        # Assessment type filters
+        # Assessment type filters  
         if search_context.assessment_types:
-            filters["assessment_type"] = {
-                "$in": [at.value for at in search_context.assessment_types]
-            }
+            filters.append({
+                "assessment_type": {"$in": [at.value for at in search_context.assessment_types]}
+            })
         
         # Quality threshold
         if search_context.quality_threshold > 0:
-            filters["overall_quality"] = {"$gte": search_context.quality_threshold}
+            filters.append({
+                "overall_quality": {"$gte": search_context.quality_threshold}
+            })
         
         # Date range filters
         if search_context.date_range:
@@ -251,18 +255,28 @@ class EnhancedVectorStore:
                 date_filters["$lte"] = search_context.date_range["end"].isoformat()
             
             if date_filters:
-                filters["document_date"] = date_filters
+                filters.append({"document_date": date_filters})
         
         # Student context
         if search_context.student_context and "student_id" in search_context.student_context:
-            filters["student_id"] = search_context.student_context["student_id"]
+            filters.append({
+                "student_id": search_context.student_context["student_id"]
+            })
         
         # IEP section relevance (if target section specified)
         if search_context.target_iep_section:
             section_field = f"relevance_{search_context.target_iep_section.value}"
-            filters[section_field] = {"$gte": 0.3}  # Minimum relevance threshold
+            filters.append({
+                section_field: {"$gte": 0.3}
+            })
         
-        return filters if filters else None
+        # Combine filters with $and if multiple, or return single filter
+        if len(filters) == 0:
+            return None
+        elif len(filters) == 1:
+            return filters[0]
+        else:
+            return {"$and": filters}
 
     async def _convert_metadata_for_storage(
         self,

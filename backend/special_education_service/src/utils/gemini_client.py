@@ -20,11 +20,30 @@ class GeminiClient:
     """Production-ready Gemini client for IEP generation"""
     
     def __init__(self):
+        # Real Gemini API authentication only - no mock mode
         self.api_key = os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY environment variable not set")
         
-        genai.configure(api_key=self.api_key)
+        if self.api_key:
+            logger.info("🔑 Using GEMINI_API_KEY for authentication")
+            genai.configure(api_key=self.api_key)
+        else:
+            # Try Application Default Credentials (ADC)
+            try:
+                import google.auth
+                from google.auth import default
+                
+                # Check if ADC is available
+                credentials, project = default()
+                logger.info(f"🔐 Using Application Default Credentials for project: {project}")
+                genai.configure(credentials=credentials)
+                
+            except Exception as adc_error:
+                logger.error(f"❌ No authentication method available:")
+                logger.error(f"   - GEMINI_API_KEY not set")
+                logger.error(f"   - Application Default Credentials failed: {adc_error}")
+                raise ValueError(
+                    "No Gemini authentication available. Set GEMINI_API_KEY or configure 'gcloud auth application-default login'"
+                )
         
         # Circuit breaker configuration
         self.circuit_breaker = CircuitBreaker(
@@ -322,3 +341,4 @@ CONTENT DEPTH EXPECTATIONS:
 Output ONLY the JSON object following the exact schema and format shown in the example."""
         
         return prompt
+

@@ -67,7 +67,7 @@ async def get_iep_service(request: Request) -> IEPService:
     iep_repo = IEPRepository(db)
     pl_repo = PLRepository(db)
     
-    # Create mock clients for now - TODO: integrate with actual services
+    # Workflow and audit clients - TODO: integrate with actual services when available
     workflow_client = None
     audit_client = None
     
