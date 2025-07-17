@@ -10,7 +10,7 @@ import time
 import aiofiles
 from pathlib import Path
 
-from ..database import get_db
+from ..database import get_db, get_engine
 from ..repositories.assessment_repository import AssessmentRepository
 from ..schemas.assessment_schemas import (
     AssessmentDocumentCreate, AssessmentDocumentUpdate, AssessmentDocumentResponse,
@@ -261,29 +261,40 @@ async def process_uploaded_document(document_id: str, file_path: str, assessment
         except Exception as update_error:
             logger.error(f"❌ [PIPELINE] Failed to update error status: {update_error}")
 
-async def process_uploaded_document_background(document_id: str, file_path: str):
-    """Background task wrapper for document processing - FIXED: Creates new repo instance"""
+async def process_uploaded_document_background(document_id: str, file_path: str, engine):
+    """Background task wrapper for document processing - FIXED: Uses engine injection"""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    
+    logger.info(f"🚀 Entering background task for document {document_id}")  # Log before try
+    
     try:
         logger.info(f"🚀 Starting background processing for document {document_id}")
+        logger.info(f"📁 Background task file path: {file_path}")
         
-        # Create new repository instance for background task to avoid session conflicts
-        from ..database import get_db
-        async for db in get_db():
+        # Create independent session factory and session
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+        async with async_session() as db:
+            if db is None:
+                raise ValueError("Failed to create database session")
+                
             assessment_repo = AssessmentRepository(db)
             
-            # Call the async processing function directly (no asyncio.run needed)
+            # Call the async processing function directly
             await process_uploaded_document(document_id, file_path, assessment_repo)
             
-            logger.info(f"✅ Background processing completed for document {document_id}")
-            break  # Exit after first iteration
+        logger.info(f"✅ Background processing completed for document {document_id}")
         
     except Exception as e:
         logger.error(f"❌ Background processing failed for document {document_id}: {e}", exc_info=True)
         
-        # Update status to failed with new repo instance
+        # Update status to failed with independent session
         try:
-            from ..database import get_db
-            async for db in get_db():
+            async_session = async_sessionmaker(engine, expire_on_commit=False)
+            async with async_session() as db:
+                if db is None:
+                    logger.error("Failed to create session for error update")
+                    return
+                    
                 assessment_repo = AssessmentRepository(db)
                 await assessment_repo.update_assessment_document(
                     UUID(document_id),
@@ -292,7 +303,8 @@ async def process_uploaded_document_background(document_id: str, file_path: str)
                         "error_message": str(e)
                     }
                 )
-                break  # Exit after first iteration
+                logger.info(f"📊 Updated document {document_id} status to 'failed'")
+                
         except Exception as update_error:
             logger.error(f"Failed to update error status for {document_id}: {update_error}")
 
@@ -305,7 +317,8 @@ async def upload_assessment_document(
     assessment_type: str = Form(...),
     assessor_name: str = Form(None),
     assessment_date: str = Form(None),
-    assessment_repo: AssessmentRepository = Depends(get_assessment_repository)
+    assessment_repo: AssessmentRepository = Depends(get_assessment_repository),
+    engine = Depends(get_engine)  # NEW: Inject engine for background tasks
 ):
     """Upload assessment document file and create database record with atomic operations"""
     document_id = None
@@ -360,7 +373,8 @@ async def upload_assessment_document(
             background_tasks.add_task(
                 process_uploaded_document_background,
                 document_id, 
-                file_path
+                file_path,
+                engine  # Pass engine to background task
             )
             logger.info(f"🔄 Background processing queued for document {document_id}")
         else:

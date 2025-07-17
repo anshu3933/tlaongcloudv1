@@ -493,6 +493,10 @@ async def init_database():
             await session.commit()
             logger.info(f"Created {len(default_templates)} default IEP templates")
 
+async def get_engine():
+    """Get the database engine for dependency injection in background tasks"""
+    return engine
+
 async def check_database_connection() -> bool:
     """Check if database connection is working"""
     try:
