@@ -1,10 +1,15 @@
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, List
 from uuid import UUID
 import json
+import logging
+
+# Global logger
+logger = logging.getLogger(__name__)
 
 from ..vector_store_enhanced import EnhancedVectorStore
 from ..repositories.iep_repository import IEPRepository
 from ..repositories.pl_repository import PLRepository
+from ..repositories.student_repository import StudentRepository
 from ..rag.metadata_aware_iep_generator import MetadataAwareIEPGenerator
 from ..utils.retry import retry_iep_operation, ConflictDetector
 
@@ -17,6 +22,7 @@ class IEPService:
         self,
         repository: IEPRepository,
         pl_repository: PLRepository,
+        student_repository: StudentRepository,
         vector_store: Union[EnhancedVectorStore, VectorStore],
         iep_generator: Union[MetadataAwareIEPGenerator, IEPGenerator],
         workflow_client,
@@ -24,6 +30,7 @@ class IEPService:
     ):
         self.repository = repository
         self.pl_repository = pl_repository
+        self.student_repository = student_repository
         self.vector_store = vector_store
         self.iep_generator = iep_generator
         self.workflow_client = workflow_client
@@ -32,8 +39,6 @@ class IEPService:
         # Determine if using enhanced or legacy system
         self.using_enhanced_rag = isinstance(iep_generator, MetadataAwareIEPGenerator)
         
-        import logging
-        logger = logging.getLogger(__name__)
         if self.using_enhanced_rag:
             logger.info("✅ IEP Service initialized with Enhanced RAG System (metadata-aware)")
         else:
@@ -50,9 +55,7 @@ class IEPService:
     ) -> Dict[str, Any]:
         """Create new IEP using template and RAG generation"""
         
-        import logging
         import time
-        logger = logging.getLogger(__name__)
         start_time = time.time()
         
         logger.info(f"🚀 [BACKEND-SERVICE] Starting RAG IEP creation for student {student_id}, academic year {academic_year}")
@@ -118,7 +121,14 @@ class IEPService:
             limit=3
         )
         
+        # Fetch student record from database
+        logger.info(f"👤 [BACKEND-SERVICE] Fetching student record...")
+        student_record = await self.student_repository.get_student(student_id)
+        if not student_record:
+            raise ValueError(f"Student {student_id} not found in database")
+        
         logger.info(f"📊 [BACKEND-SERVICE] Historical data collected: {len(previous_ieps)} previous IEPs, {len(previous_pls)} assessments")
+        logger.info(f"👤 [BACKEND-SERVICE] Student record: {student_record.get('first_name', '')} {student_record.get('last_name', '')}, Grade: {student_record.get('grade_level', '')}")
         
         # STEP 2: Disconnect from database session and generate content with RAG
         # This ensures no active DB session during external API calls
@@ -158,32 +168,62 @@ class IEPService:
         
         # Extract student data from the content field (where frontend sends it)
         content_data = initial_data.get("content", {})
-        assessment_data = content_data.get("assessment_summary", {})
+        document_id = content_data.get("document_id")
         
-        # Handle assessment_data being either string or dict
+        # 🔗 NEW: ASSESSMENT DATA BRIDGE - Fetch real assessment data if document_id provided
+        real_assessment_data = {}
+        if document_id:
+            logger.info(f"🔗 [ASSESSMENT-BRIDGE] Fetching real assessment data for document_id: {document_id}")
+            real_assessment_data = await self._fetch_assessment_data(document_id, student_id)
+        else:
+            logger.warning(f"⚠️ [ASSESSMENT-BRIDGE] No document_id provided, using fallback data")
+        
+        # Handle legacy assessment_data format (for backwards compatibility)
+        assessment_data = content_data.get("assessment_summary", {})
         if isinstance(assessment_data, str):
-            # If it's a string, treat it as a summary
             assessment_dict = {"summary": assessment_data}
         elif isinstance(assessment_data, dict):
             assessment_dict = assessment_data
         else:
             assessment_dict = {}
         
-        # Prepare student data for RAG generation using content field
+        # Prepare student data with DATABASE record taking priority, then assessment data
         student_data = {
             "student_id": str(student_id),
-            "disability_type": content_data.get("disability_types", []),
-            "grade_level": content_data.get("grade_level", ""),
-            "student_name": content_data.get("student_name", ""),
+            # Use database record for core student info (CRITICAL for validation)
+            "disability_type": student_record.get("disability_codes", []),
+            "grade_level": student_record.get("grade_level", ""),
+            "student_name": f"{student_record.get('first_name', '')} {student_record.get('last_name', '')}".strip(),
             "case_manager_name": content_data.get("case_manager_name", ""),
             "placement_setting": content_data.get("placement_setting", ""),
             "service_hours_per_week": content_data.get("service_hours_per_week", 0),
-            # Extract assessment summary details with defensive checks
-            "current_achievement": assessment_dict.get("current_achievement", assessment_dict.get("summary", "")),
-            "strengths": assessment_dict.get("strengths", ""),
-            "areas_for_growth": assessment_dict.get("areas_for_growth", ""),
-            "learning_profile": assessment_dict.get("learning_profile", ""),
+            
+            # 🎯 ENHANCED: Use REAL assessment data when available, fallback to generic
+            "current_achievement": (
+                real_assessment_data.get("present_levels_summary", "") or 
+                assessment_dict.get("current_achievement", assessment_dict.get("summary", ""))
+            ),
+            "strengths": (
+                real_assessment_data.get("strengths_formatted", "") or 
+                assessment_dict.get("strengths", "")
+            ),
+            "areas_for_growth": (
+                real_assessment_data.get("areas_of_concern_formatted", "") or 
+                assessment_dict.get("areas_for_growth", "")
+            ),
+            "learning_profile": (
+                real_assessment_data.get("learning_profile_summary", "") or 
+                assessment_dict.get("learning_profile", "")
+            ),
             "interests": assessment_dict.get("interests", ""),
+            
+            # 📊 NEW: Add detailed test scores and assessment findings
+            "test_scores": real_assessment_data.get("test_scores", []),
+            "composite_scores": real_assessment_data.get("composite_scores", {}),
+            "educational_objectives": real_assessment_data.get("educational_objectives", []),
+            "recommendations": real_assessment_data.get("recommendations", []),
+            "assessment_confidence": real_assessment_data.get("extraction_confidence", 0.0),
+            
             # Extract educational planning if available
             "annual_goals": content_data.get("educational_planning", {}).get("annual_goals", ""),
             "teaching_strategies": content_data.get("educational_planning", {}).get("teaching_strategies", ""),
@@ -457,8 +497,6 @@ class IEPService:
         """Create new IEP without RAG generation (simple version) with retry mechanism"""
         
         async def _create_iep_operation():
-            import logging
-            logger = logging.getLogger(__name__)
             logger.info(f"Creating simple IEP for student {student_id}, academic year {academic_year}")
             
             try:
@@ -784,3 +822,221 @@ class IEPService:
                 text_parts.append(f"{section_name}: {section_content}")
         
         return "\n\n".join(text_parts)
+    
+    async def _fetch_assessment_data(self, document_id: str, student_id: UUID) -> Dict[str, Any]:
+        """
+        🔗 ASSESSMENT DATA BRIDGE: Fetch real assessment data from Document AI pipeline
+        
+        This method retrieves:
+        1. Extracted structured data from Document AI
+        2. Individual test scores (WISC-V, WIAT-IV, etc.)
+        3. Quantified composite scores
+        4. Educational recommendations
+        
+        Returns formatted data ready for LLM consumption
+        """
+        logger.info(f"🔗 [ASSESSMENT-BRIDGE] Starting data retrieval for document {document_id}")
+        
+        assessment_data = {
+            "present_levels_summary": "",
+            "strengths_formatted": "",
+            "areas_of_concern_formatted": "",
+            "learning_profile_summary": "",
+            "test_scores": [],
+            "composite_scores": {},
+            "educational_objectives": [],
+            "recommendations": [],
+            "extraction_confidence": 0.0
+        }
+        
+        try:
+            # Import assessment repository and use the SAME session as IEP repository
+            from ..repositories.assessment_repository import AssessmentRepository
+            assessment_repo = AssessmentRepository(self.repository.session)
+            
+            # 1. Fetch structured data from Document AI extraction
+            logger.info(f"📄 [ASSESSMENT-BRIDGE] Fetching structured data...")
+            try:
+                from uuid import UUID as ConvertUUID
+                doc_uuid = ConvertUUID(document_id)
+                extracted_data = await assessment_repo.get_document_extracted_data(doc_uuid)
+                
+                if extracted_data and extracted_data.get("structured_data"):
+                    structured = extracted_data["structured_data"]
+                    
+                    # Extract educational objectives
+                    if "educational_objectives" in structured:
+                        assessment_data["educational_objectives"] = structured["educational_objectives"]
+                        logger.info(f"✅ Found {len(structured['educational_objectives'])} educational objectives")
+                    
+                    # Extract performance levels
+                    if "performance_levels" in structured:
+                        perf_levels = structured["performance_levels"]
+                        assessment_data["present_levels_summary"] = self._format_performance_levels(perf_levels)
+                        logger.info(f"✅ Formatted performance levels from {len(perf_levels)} areas")
+                    
+                    # Extract strengths
+                    if "strengths" in structured:
+                        assessment_data["strengths_formatted"] = self._format_list_items(structured["strengths"], "Strengths")
+                        logger.info(f"✅ Formatted {len(structured['strengths'])} strengths")
+                    
+                    # Extract areas of concern
+                    if "areas_of_concern" in structured:
+                        assessment_data["areas_of_concern_formatted"] = self._format_list_items(structured["areas_of_concern"], "Areas of Concern")
+                        logger.info(f"✅ Formatted {len(structured['areas_of_concern'])} areas of concern")
+                    
+                    # Extract recommendations
+                    if "recommendations" in structured:
+                        assessment_data["recommendations"] = structured["recommendations"]
+                        logger.info(f"✅ Found {len(structured['recommendations'])} recommendations")
+                    
+                    # Set extraction confidence
+                    assessment_data["extraction_confidence"] = extracted_data.get("extraction_confidence", 0.0)
+                    
+            except Exception as e:
+                logger.error(f"❌ [ASSESSMENT-BRIDGE] Error fetching structured data: {e}")
+            
+            # 2. Fetch individual test scores
+            logger.info(f"📊 [ASSESSMENT-BRIDGE] Fetching test scores...")
+            try:
+                scores = await assessment_repo.get_document_scores(doc_uuid)
+                if scores:
+                    assessment_data["test_scores"] = self._format_test_scores(scores)
+                    logger.info(f"✅ Formatted {len(scores)} test scores")
+            except Exception as e:
+                logger.error(f"❌ [ASSESSMENT-BRIDGE] Error fetching test scores: {e}")
+            
+            # 3. Fetch quantified data (composite scores)
+            logger.info(f"🧮 [ASSESSMENT-BRIDGE] Fetching quantified data...")
+            try:
+                quantified_data = await assessment_repo.get_student_quantified_data(student_id)
+                if quantified_data:
+                    # Get the most recent quantified data
+                    latest_data = max(quantified_data, key=lambda x: x.get("created_at", ""))
+                    assessment_data["composite_scores"] = self._format_composite_scores(latest_data)
+                    logger.info(f"✅ Formatted composite scores from latest assessment")
+            except Exception as e:
+                logger.error(f"❌ [ASSESSMENT-BRIDGE] Error fetching quantified data: {e}")
+            
+            # Log summary of retrieved data
+            data_summary = {
+                "objectives_count": len(assessment_data["educational_objectives"]),
+                "test_scores_count": len(assessment_data["test_scores"]),
+                "has_present_levels": bool(assessment_data["present_levels_summary"]),
+                "has_strengths": bool(assessment_data["strengths_formatted"]),
+                "has_concerns": bool(assessment_data["areas_of_concern_formatted"]),
+                "confidence": assessment_data["extraction_confidence"]
+            }
+            logger.info(f"📋 [ASSESSMENT-BRIDGE] Data retrieval complete: {data_summary}")
+            
+        except Exception as e:
+            logger.error(f"❌ [ASSESSMENT-BRIDGE] Critical error in assessment data retrieval: {e}")
+            # Return empty structure on error - IEP generation will use fallback
+        
+        return assessment_data
+    
+    def _format_performance_levels(self, performance_levels: Dict[str, Any]) -> str:
+        """Format performance levels into readable summary"""
+        if not performance_levels:
+            return ""
+        
+        formatted_parts = []
+        for area, data in performance_levels.items():
+            if isinstance(data, dict) and "current_level" in data:
+                formatted_parts.append(f"{area.title()}: {data['current_level']}")
+            elif isinstance(data, str):
+                formatted_parts.append(f"{area.title()}: {data}")
+        
+        return "; ".join(formatted_parts)
+    
+    def _format_list_items(self, items: List[str], category: str) -> str:
+        """Format list of items into readable text"""
+        if not items:
+            return ""
+        
+        if len(items) == 1:
+            return items[0]
+        elif len(items) <= 3:
+            return f"{', '.join(items[:-1])}, and {items[-1]}"
+        else:
+            return f"{', '.join(items[:3])}, and {len(items)-3} additional {category.lower()}"
+    
+    def _format_test_scores(self, scores: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Format test scores for LLM consumption"""
+        formatted_scores = []
+        
+        for score in scores:
+            formatted_score = {
+                "test_name": score.get("test_name", ""),
+                "subtest_name": score.get("subtest_name", ""),
+                "standard_score": score.get("standard_score"),
+                "percentile_rank": score.get("percentile_rank"),
+                "score_interpretation": self._interpret_standard_score(score.get("standard_score")),
+                "confidence": score.get("extraction_confidence", 0.0)
+            }
+            formatted_scores.append(formatted_score)
+        
+        return formatted_scores
+    
+    def _format_composite_scores(self, quantified_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Format composite scores for LLM consumption"""
+        composite_mapping = {
+            "cognitive_composite": "Cognitive Ability",
+            "academic_composite": "Academic Achievement", 
+            "behavioral_composite": "Behavioral Functioning",
+            "reading_composite": "Reading Skills",
+            "math_composite": "Mathematics",
+            "writing_composite": "Written Expression",
+            "language_composite": "Language Skills"
+        }
+        
+        formatted_composites = {}
+        for key, label in composite_mapping.items():
+            if quantified_data.get(key) is not None:
+                score = quantified_data[key]
+                formatted_composites[label] = {
+                    "score": score,
+                    "interpretation": self._interpret_composite_score(score),
+                    "percentile_equivalent": self._score_to_percentile(score)
+                }
+        
+        return formatted_composites
+    
+    def _interpret_standard_score(self, standard_score: Optional[int]) -> str:
+        """Interpret standard score into performance level"""
+        if standard_score is None:
+            return "Not available"
+        
+        if standard_score >= 130:
+            return "Very Superior"
+        elif standard_score >= 120:
+            return "Superior" 
+        elif standard_score >= 110:
+            return "High Average"
+        elif standard_score >= 90:
+            return "Average"
+        elif standard_score >= 80:
+            return "Low Average"
+        elif standard_score >= 70:
+            return "Borderline"
+        else:
+            return "Significantly Below Average"
+    
+    def _interpret_composite_score(self, composite_score: float) -> str:
+        """Interpret 0-100 composite score into performance level"""
+        if composite_score >= 85:
+            return "Above Average"
+        elif composite_score >= 70:
+            return "Average"
+        elif composite_score >= 55:
+            return "Below Average"
+        elif composite_score >= 40:
+            return "Low"
+        else:
+            return "Significantly Below Average"
+    
+    def _score_to_percentile(self, composite_score: float) -> int:
+        """Convert 0-100 composite score to approximate percentile"""
+        # Simple linear mapping for demonstration
+        # In practice, you'd use actual standardization tables
+        return min(99, max(1, int(composite_score)))

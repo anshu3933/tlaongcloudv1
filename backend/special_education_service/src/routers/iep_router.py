@@ -66,6 +66,7 @@ async def get_iep_service(request: Request) -> IEPService:
     db = await get_request_session(request)
     iep_repo = IEPRepository(db)
     pl_repo = PLRepository(db)
+    student_repo = StudentRepository(db)
     
     # Workflow and audit clients - TODO: integrate with actual services when available
     workflow_client = None
@@ -74,6 +75,7 @@ async def get_iep_service(request: Request) -> IEPService:
     return IEPService(
         repository=iep_repo,
         pl_repository=pl_repo,
+        student_repository=student_repo,
         vector_store=vector_store,
         iep_generator=iep_generator,
         workflow_client=workflow_client,

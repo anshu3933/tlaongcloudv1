@@ -10,6 +10,7 @@ from ..database import get_db, get_request_scoped_db
 from ..middleware.session_middleware import get_request_session
 from ..repositories.iep_repository import IEPRepository
 from ..repositories.pl_repository import PLRepository
+from ..repositories.student_repository import StudentRepository
 from ..services.iep_service import IEPService
 from ..services.user_adapter import UserAdapter
 from ..services.async_job_service import AsyncJobService
@@ -66,6 +67,7 @@ async def get_iep_service(request: Request) -> IEPService:
     db = await get_request_session(request)
     iep_repo = IEPRepository(db)
     pl_repo = PLRepository(db)
+    student_repo = StudentRepository(db)
     
     # Workflow and audit clients - TODO: integrate with actual services when available
     workflow_client = None
@@ -74,6 +76,7 @@ async def get_iep_service(request: Request) -> IEPService:
     return IEPService(
         repository=iep_repo,
         pl_repository=pl_repo,
+        student_repository=student_repo,
         vector_store=enhanced_vector_store,
         iep_generator=metadata_aware_iep_generator,
         workflow_client=workflow_client,

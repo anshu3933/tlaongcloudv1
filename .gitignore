@@ -47,3 +47,5 @@ logs/
 *.tmp
 *.temp
 .DS_Store 
+docker-compose.yml
+docker-compose.yml

@@ -1,8 +1,9 @@
 from typing import Dict, Any, List
 import json
 import asyncio
-from google import genai
-from google.genai import types
+import os
+import google.generativeai as genai
+import logging
 
 from ..vector_store import VectorStore
 
@@ -10,12 +11,34 @@ class IEPGenerator:
     def __init__(self, vector_store: VectorStore, settings):
         self.vector_store = vector_store
         self.settings = settings
-        self.client = genai.Client(
-            vertexai=True,
-            project=settings.gcp_project_id,
-            location=settings.gcp_region
+        self.logger = logging.getLogger(__name__)
+        
+        # Configure Google AI Studio API authentication
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY environment variable is required")
+        
+        genai.configure(api_key=api_key)
+        
+        # Initialize the model
+        self.model = genai.GenerativeModel(
+            model_name=settings.gemini_model,
+            generation_config={
+                "temperature": 0.7,
+                "top_p": 0.95,
+                "top_k": 40,
+                "max_output_tokens": 32768,
+                "response_mime_type": "application/json",
+            },
+            safety_settings={
+                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
+                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
+            }
         )
-        self.model = settings.gemini_model
+        
+        self.logger.info("✅ IEP Generator initialized with Google AI Studio API key authentication")
     
     async def generate_iep(
         self,
@@ -122,19 +145,23 @@ class IEPGenerator:
     
     async def _retrieve_similar_ieps(self, query: str, top_k: int = 3) -> List[Dict]:
         """Retrieve similar IEPs from vector store"""
-        # Create query embedding (run in thread pool to avoid blocking)
-        query_embedding_result = await asyncio.to_thread(
-            self.client.models.embed_content,
-            model="text-embedding-004",
-            contents=query
-        )
-        
-        # Search vector store
-        results = self.vector_store.search(
-            query_embedding=query_embedding_result.embeddings[0].values,
-            top_k=top_k
-        )
-        return results
+        try:
+            # Create query embedding using Google AI Studio API
+            embedding_result = await asyncio.to_thread(
+                genai.embed_content,
+                model="text-embedding-004",
+                content=query
+            )
+            
+            # Search vector store
+            results = self.vector_store.search(
+                query_embedding=embedding_result['embedding'],
+                top_k=top_k
+            )
+            return results
+        except Exception as e:
+            self.logger.warning(f"Failed to retrieve similar IEPs: {e}")
+            return []
     
     async def _generate_section(
         self, 
@@ -202,14 +229,8 @@ class IEPGenerator:
             logger.info(f"Prompt length: {len(prompt)} characters")
             
             response = await asyncio.to_thread(
-                self.client.models.generate_content,
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.7,
-                    max_output_tokens=65536,
-                    response_mime_type="application/json"
-                )
+                self.model.generate_content,
+                prompt
             )
             
             logger.info(f"Gemini response received for section {section_name}")
@@ -253,14 +274,8 @@ class IEPGenerator:
                 try:
                     await asyncio.sleep(1)  # Brief delay before retry
                     retry_response = await asyncio.to_thread(
-                        self.client.models.generate_content,
-                        model=self.model,
-                        contents=retry_prompt,
-                        config=types.GenerateContentConfig(
-                            temperature=0.5,
-                            max_output_tokens=65536,
-                            response_mime_type="application/json"
-                        )
+                        self.model.generate_content,
+                        retry_prompt
                     )
                     
                     if retry_response.text:
@@ -359,14 +374,8 @@ class IEPGenerator:
         """
         
         response = await asyncio.to_thread(
-            self.client.models.generate_content,
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-                max_output_tokens=65536,
-                response_mime_type="application/json"
-            )
+            self.model.generate_content,
+            prompt
         )
         
         import logging
@@ -531,12 +540,17 @@ class IEPGenerator:
 
     async def create_embedding(self, text: str) -> List[float]:
         """Create embedding for text"""
-        result = await asyncio.to_thread(
-            self.client.models.embed_content,
-            model="text-embedding-004",
-            contents=text
-        )
-        return result.embeddings[0].values
+        try:
+            result = await asyncio.to_thread(
+                genai.embed_content,
+                model="text-embedding-004",
+                content=text
+            )
+            return result['embedding']
+        except Exception as e:
+            self.logger.error(f"Failed to create embedding: {e}")
+            # Return a zero vector as fallback
+            return [0.0] * 768
     
     def _prepare_context(
         self,

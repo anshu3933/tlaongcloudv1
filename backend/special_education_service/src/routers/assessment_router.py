@@ -68,19 +68,40 @@ def _make_serializable(data: Any) -> Any:
             return str(data)
 
 async def save_uploaded_file(file: UploadFile, document_id: str) -> str:
-    """Save uploaded file to local storage and return file path"""
-    # Create safe filename with document ID
-    file_extension = Path(file.filename).suffix if file.filename else '.pdf'
-    safe_filename = f"{document_id}{file_extension}"
-    file_path = UPLOAD_DIR / safe_filename
-    
-    # Save file to disk
-    async with aiofiles.open(file_path, 'wb') as buffer:
-        content = await file.read()
-        await buffer.write(content)
-    
-    logger.info(f"📁 File saved to {file_path} ({len(content)} bytes)")
-    return str(file_path)
+    """Save uploaded file to local storage and return file path with validation"""
+    try:
+        # Create safe filename with document ID
+        file_extension = Path(file.filename).suffix if file.filename else '.pdf'
+        safe_filename = f"{document_id}{file_extension}"
+        file_path = UPLOAD_DIR / safe_filename
+        
+        # Save file to disk
+        async with aiofiles.open(file_path, 'wb') as buffer:
+            content = await file.read()
+            await buffer.write(content)
+        
+        # Validate file was actually saved
+        if not file_path.exists():
+            raise IOError(f"File save failed: {file_path} does not exist after write")
+        
+        # Validate file size
+        actual_size = file_path.stat().st_size
+        if actual_size == 0:
+            raise IOError(f"File save failed: {file_path} is empty")
+        
+        logger.info(f"📁 File saved and validated: {file_path} ({actual_size} bytes)")
+        return str(file_path)
+        
+    except Exception as e:
+        logger.error(f"❌ File save failed for document {document_id}: {e}")
+        # Clean up any partially created file
+        if 'file_path' in locals() and file_path.exists():
+            try:
+                file_path.unlink()
+                logger.info(f"🗑️ Cleaned up failed file: {file_path}")
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup file {file_path}: {cleanup_error}")
+        raise
 
 async def process_uploaded_document(document_id: str, file_path: str, assessment_repo: AssessmentRepository):
     """Process uploaded document with Document AI and store results"""
@@ -94,6 +115,17 @@ async def process_uploaded_document(document_id: str, file_path: str, assessment
     try:
         logger.info(f"🔄 [PIPELINE] Starting processing for document {document_id}")
         logger.info(f"📁 [PIPELINE] File path: {file_path}")
+        
+        # IMMEDIATE FIX: Validate file exists before processing
+        file_path_obj = Path(file_path)
+        if not file_path_obj.exists():
+            raise FileNotFoundError(f"Document file not found: {file_path}")
+        
+        file_size = file_path_obj.stat().st_size
+        if file_size == 0:
+            raise IOError(f"Document file is empty: {file_path}")
+        
+        logger.info(f"📊 [PIPELINE] File validation passed: {file_size} bytes")
         
         # Update status to processing
         status_update_start = time.time()
@@ -229,29 +261,38 @@ async def process_uploaded_document(document_id: str, file_path: str, assessment
         except Exception as update_error:
             logger.error(f"❌ [PIPELINE] Failed to update error status: {update_error}")
 
-def process_uploaded_document_background(document_id: str, file_path: str, assessment_repo: AssessmentRepository):
-    """Background task wrapper for document processing"""
+async def process_uploaded_document_background(document_id: str, file_path: str):
+    """Background task wrapper for document processing - FIXED: Creates new repo instance"""
     try:
         logger.info(f"🚀 Starting background processing for document {document_id}")
         
-        # Run the async processing function in a new event loop
-        import asyncio
-        asyncio.run(process_uploaded_document(document_id, file_path, assessment_repo))
-        
-        logger.info(f"✅ Background processing completed for document {document_id}")
+        # Create new repository instance for background task to avoid session conflicts
+        from ..database import get_db
+        async for db in get_db():
+            assessment_repo = AssessmentRepository(db)
+            
+            # Call the async processing function directly (no asyncio.run needed)
+            await process_uploaded_document(document_id, file_path, assessment_repo)
+            
+            logger.info(f"✅ Background processing completed for document {document_id}")
+            break  # Exit after first iteration
         
     except Exception as e:
         logger.error(f"❌ Background processing failed for document {document_id}: {e}", exc_info=True)
         
-        # Update status to failed
+        # Update status to failed with new repo instance
         try:
-            asyncio.run(assessment_repo.update_assessment_document(
-                UUID(document_id),
-                {
-                    "processing_status": "failed",
-                    "error_message": str(e)
-                }
-            ))
+            from ..database import get_db
+            async for db in get_db():
+                assessment_repo = AssessmentRepository(db)
+                await assessment_repo.update_assessment_document(
+                    UUID(document_id),
+                    {
+                        "processing_status": "failed",
+                        "error_message": str(e)
+                    }
+                )
+                break  # Exit after first iteration
         except Exception as update_error:
             logger.error(f"Failed to update error status for {document_id}: {update_error}")
 
@@ -266,7 +307,10 @@ async def upload_assessment_document(
     assessment_date: str = Form(None),
     assessment_repo: AssessmentRepository = Depends(get_assessment_repository)
 ):
-    """Upload assessment document file and create database record"""
+    """Upload assessment document file and create database record with atomic operations"""
+    document_id = None
+    file_path = None
+    
     try:
         # Validate file type
         if not file.filename or not file.filename.lower().endswith(('.pdf', '.doc', '.docx')):
@@ -275,7 +319,7 @@ async def upload_assessment_document(
                 detail="Only PDF, DOC, and DOCX files are supported"
             )
         
-        # Create document record first to get ID
+        # ATOMIC OPERATION: Create document record first to get ID
         document_data = {
             "student_id": UUID(student_id),
             "document_type": assessment_type,
@@ -287,11 +331,23 @@ async def upload_assessment_document(
         
         created_document = await assessment_repo.create_assessment_document(document_data)
         document_id = created_document["id"]
+        logger.info(f"📄 Document record created: {document_id}")
         
-        # Save file to storage
-        file_path = await save_uploaded_file(file, document_id)
+        # ATOMIC OPERATION: Save file to storage with validation
+        try:
+            file_path = await save_uploaded_file(file, document_id)
+            logger.info(f"📁 File saved successfully: {file_path}")
+        except Exception as file_error:
+            logger.error(f"❌ File save failed for document {document_id}: {file_error}")
+            # ROLLBACK: Delete database record if file save fails
+            await assessment_repo.delete_assessment_document(UUID(document_id))
+            logger.info(f"🗑️ Database record rolled back for failed upload: {document_id}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"File upload failed: {str(file_error)}"
+            )
         
-        # Update document with real file path
+        # ATOMIC OPERATION: Update document with real file path only after successful save
         updated_document = await assessment_repo.update_assessment_document(
             UUID(document_id),
             {"file_path": file_path, "processing_status": "uploaded"}
@@ -299,14 +355,20 @@ async def upload_assessment_document(
         
         logger.info(f"📄 Document {document_id} uploaded and saved successfully")
         
-        # Trigger processing in background
-        background_tasks.add_task(
-            process_uploaded_document_background,
-            document_id, 
-            file_path, 
-            assessment_repo
-        )
-        logger.info(f"🔄 Background processing queued for document {document_id}")
+        # SAFE OPERATION: Only trigger background processing if file exists
+        if Path(file_path).exists():
+            background_tasks.add_task(
+                process_uploaded_document_background,
+                document_id, 
+                file_path
+            )
+            logger.info(f"🔄 Background processing queued for document {document_id}")
+        else:
+            logger.error(f"❌ File validation failed after save: {file_path}")
+            await assessment_repo.update_assessment_document(
+                UUID(document_id),
+                {"processing_status": "failed", "error_message": "File validation failed after save"}
+            )
         
         return AssessmentDocumentResponse(**updated_document)
         
@@ -314,6 +376,26 @@ async def upload_assessment_document(
         raise
     except Exception as e:
         logger.error(f"Unexpected error uploading document: {e}", exc_info=True)
+        
+        # EMERGENCY ROLLBACK: Clean up any partial state
+        if document_id:
+            try:
+                await assessment_repo.update_assessment_document(
+                    UUID(document_id),
+                    {"processing_status": "failed", "error_message": f"Upload failed: {str(e)}"}
+                )
+                logger.info(f"🚨 Emergency rollback completed for document {document_id}")
+            except Exception as rollback_error:
+                logger.error(f"❌ Emergency rollback failed for document {document_id}: {rollback_error}")
+        
+        # Clean up any orphaned files
+        if file_path and Path(file_path).exists():
+            try:
+                Path(file_path).unlink()
+                logger.info(f"🗑️ Cleaned up orphaned file: {file_path}")
+            except Exception as cleanup_error:
+                logger.error(f"❌ File cleanup failed: {cleanup_error}")
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to upload assessment document"

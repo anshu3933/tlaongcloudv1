@@ -41,9 +41,7 @@ class GeminiClient:
                 logger.error(f"❌ No authentication method available:")
                 logger.error(f"   - GEMINI_API_KEY not set")
                 logger.error(f"   - Application Default Credentials failed: {adc_error}")
-                raise ValueError(
-                    "No Gemini authentication available. Set GEMINI_API_KEY or configure 'gcloud auth application-default login'"
-                )
+                raise ValueError("GEMINI_API_KEY required for operation. Get API key from: https://aistudio.google.com/app/apikey")
         
         # Circuit breaker configuration
         self.circuit_breaker = CircuitBreaker(
@@ -102,15 +100,16 @@ class GeminiClient:
             f"{student_data.get('student_id')}:{datetime.utcnow().isoformat()}".encode()
         ).hexdigest()
         
-        # Call Gemini with circuit breaker
+        # Call Gemini with circuit breaker or test mode
         @self.circuit_breaker
         async def _generate():
-            # Run in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            
             start_time = datetime.utcnow()
             
+            # Real Gemini API call
             try:
+                # Run in thread pool to avoid blocking
+                loop = asyncio.get_event_loop()
+                
                 response = await loop.run_in_executor(
                     None,
                     self.model.generate_content,
@@ -282,6 +281,9 @@ Identified Strengths: {student_data.get('strengths', 'Not provided')}
 Areas Needing Support: {student_data.get('areas_for_growth', 'Not provided')}
 Learning Profile: {student_data.get('learning_profile', 'Not provided')}
 
+🔥 REAL ASSESSMENT DATA (Use this specific data to create evidence-based IEP content):
+{self._format_assessment_data_for_prompt(student_data)}
+
 STUDENT PROFILE (USE EXACTLY AS PROVIDED - DO NOT CHANGE):
 Name: {student_data.get('student_name', 'Student')}
 Grade: {student_data.get('grade_level', 'Not specified')} (CRITICAL: Use this exact grade level)
@@ -341,4 +343,89 @@ CONTENT DEPTH EXPECTATIONS:
 Output ONLY the JSON object following the exact schema and format shown in the example."""
         
         return prompt
+    
+    def _format_assessment_data_for_prompt(self, student_data: Dict[str, Any]) -> str:
+        """
+        🔥 ASSESSMENT DATA BRIDGE: Format real assessment data for LLM prompt
+        
+        This creates a detailed, structured section with actual test scores,
+        composite scores, and educational findings for evidence-based IEP generation.
+        """
+        
+        # Check if we have real assessment data
+        test_scores = student_data.get('test_scores', [])
+        composite_scores = student_data.get('composite_scores', {})
+        educational_objectives = student_data.get('educational_objectives', [])
+        recommendations = student_data.get('recommendations', [])
+        confidence = student_data.get('assessment_confidence', 0.0)
+        
+        if not any([test_scores, composite_scores, educational_objectives, recommendations]):
+            return "No specific assessment data available. Use general educational analysis."
+        
+        formatted_sections = []
+        
+        # Add header with confidence information
+        if confidence > 0:
+            formatted_sections.append(f"Assessment Data Extraction Confidence: {confidence:.1%}")
+        
+        # Format individual test scores
+        if test_scores:
+            formatted_sections.append("\n📊 INDIVIDUAL TEST SCORES:")
+            for score in test_scores[:10]:  # Limit to prevent prompt overflow
+                score_line = f"  • {score.get('test_name', 'Unknown Test')} - {score.get('subtest_name', 'Unknown Subtest')}: "
+                if score.get('standard_score'):
+                    score_line += f"Standard Score {score['standard_score']}"
+                    if score.get('percentile_rank'):
+                        score_line += f" ({score['percentile_rank']}th percentile)"
+                    if score.get('score_interpretation'):
+                        score_line += f" - {score['score_interpretation']}"
+                else:
+                    score_line += "Score not available"
+                formatted_sections.append(score_line)
+        
+        # Format composite scores
+        if composite_scores:
+            formatted_sections.append("\n🧮 COMPOSITE PERFORMANCE AREAS:")
+            for area, data in composite_scores.items():
+                if isinstance(data, dict):
+                    composite_line = f"  • {area}: {data.get('score', 'N/A')}/100"
+                    if data.get('interpretation'):
+                        composite_line += f" ({data['interpretation']})"
+                    if data.get('percentile_equivalent'):
+                        composite_line += f" - {data['percentile_equivalent']}th percentile"
+                    formatted_sections.append(composite_line)
+        
+        # Format educational objectives from Document AI
+        if educational_objectives:
+            formatted_sections.append("\n🎯 EXTRACTED EDUCATIONAL OBJECTIVES:")
+            for obj in educational_objectives[:5]:  # Limit to prevent overflow
+                if isinstance(obj, dict):
+                    obj_line = f"  • Area: {obj.get('area', 'Unknown')}"
+                    if obj.get('current_performance'):
+                        obj_line += f" | Current: {obj['current_performance'][:100]}..."
+                    if obj.get('goal'):
+                        obj_line += f" | Goal: {obj['goal'][:100]}..."
+                    formatted_sections.append(obj_line)
+                elif isinstance(obj, str):
+                    formatted_sections.append(f"  • {obj[:150]}...")
+        
+        # Format recommendations
+        if recommendations:
+            formatted_sections.append("\n💡 ASSESSMENT RECOMMENDATIONS:")
+            for rec in recommendations[:5]:  # Limit recommendations
+                if isinstance(rec, str):
+                    formatted_sections.append(f"  • {rec[:200]}...")
+                elif isinstance(rec, dict) and rec.get('text'):
+                    formatted_sections.append(f"  • {rec['text'][:200]}...")
+        
+        # Add instruction for using this data
+        formatted_sections.append("""
+🚨 CRITICAL INSTRUCTION: Use the above REAL assessment data to create specific, evidence-based IEP content.
+- Reference actual test scores in present levels
+- Base goals on identified performance areas and scores
+- Use specific recommendations for accommodations and services
+- Connect composite scores to appropriate educational objectives
+- DO NOT ignore this data - it represents actual student assessment results""")
+        
+        return "\n".join(formatted_sections)
 
