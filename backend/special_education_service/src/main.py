@@ -224,7 +224,7 @@ if __name__ == "__main__":
     import uvicorn
     
     logger.info(f"Starting Special Education Service on port {settings.special_education_port if hasattr(settings, 'special_education_port') else 8005}")
-    logger.info(f"Environment: {settings.environment}")
+    logger.info(f"Environment: {settings.ENVIRONMENT}")
     
     uvicorn.run(
         "main:app",

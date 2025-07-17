@@ -261,14 +261,25 @@ async def process_uploaded_document(document_id: str, file_path: str, assessment
         except Exception as update_error:
             logger.error(f"❌ [PIPELINE] Failed to update error status: {update_error}")
 
-async def process_uploaded_document_background(document_id: str, file_path: str, engine):
-    """Background task wrapper for document processing - FIXED: Uses engine injection"""
+def process_uploaded_document_background_sync(document_id: str, file_path: str, engine):
+    """Background task wrapper for document processing - FIXED: Sync wrapper with new event loop"""
+    import asyncio
     from sqlalchemy.ext.asyncio import async_sessionmaker
     
-    logger.info(f"🚀 Entering background task for document {document_id}")  # Log before try
+    logger.info(f"🚀🚀🚀 BACKGROUND TASK STARTED for document {document_id}")
+    logger.info(f"🚀 Function called with parameters:")
+    logger.info(f"🚀   document_id: {document_id}")
+    logger.info(f"🚀   file_path: {file_path}")
+    logger.info(f"🚀   engine: {type(engine)}")
+    logger.info(f"🚀 Current working directory: {os.getcwd()}")
+    logger.info(f"🚀 File exists check: {Path(file_path).exists()}")
+    if Path(file_path).exists():
+        logger.info(f"🚀 File size: {Path(file_path).stat().st_size} bytes")
+    logger.info(f"🚀 Entering sync background task for document {document_id}")
     
-    try:
-        logger.info(f"🚀 Starting background processing for document {document_id}")
+    async def async_process():
+        """Async processing function that runs in new event loop"""
+        logger.info(f"🚀 Starting async background processing for document {document_id}")
         logger.info(f"📁 Background task file path: {file_path}")
         
         # Create independent session factory and session
@@ -283,11 +294,9 @@ async def process_uploaded_document_background(document_id: str, file_path: str,
             await process_uploaded_document(document_id, file_path, assessment_repo)
             
         logger.info(f"✅ Background processing completed for document {document_id}")
-        
-    except Exception as e:
-        logger.error(f"❌ Background processing failed for document {document_id}: {e}", exc_info=True)
-        
-        # Update status to failed with independent session
+    
+    async def update_status_failed(error_message: str):
+        """Update document status to failed using async session"""
         try:
             async_session = async_sessionmaker(engine, expire_on_commit=False)
             async with async_session() as db:
@@ -300,13 +309,97 @@ async def process_uploaded_document_background(document_id: str, file_path: str,
                     UUID(document_id),
                     {
                         "processing_status": "failed",
-                        "error_message": str(e)
+                        "error_message": error_message
                     }
                 )
                 logger.info(f"📊 Updated document {document_id} status to 'failed'")
                 
         except Exception as update_error:
             logger.error(f"Failed to update error status for {document_id}: {update_error}")
+    
+    # Run in new event loop with comprehensive error handling
+    loop = None
+    try:
+        # Check if we're already in an event loop
+        try:
+            current_loop = asyncio.get_running_loop()
+            logger.info(f"🔄 Detected running event loop, using thread executor for document {document_id}")
+            
+            # If we're in an event loop, run in thread executor
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, async_process())
+                result = [future.result()]
+            
+        except RuntimeError:
+            # No running loop, create a new one
+            logger.info(f"🆕 No running event loop detected, creating new loop for document {document_id}")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Use asyncio.gather for better error collection as suggested
+            result = loop.run_until_complete(
+                asyncio.gather(async_process(), return_exceptions=True)
+            )
+        
+        # Check if any tasks failed
+        for task_result in result:
+            if isinstance(task_result, Exception):
+                raise task_result
+                
+        logger.info(f"✅ Sync background processing completed for document {document_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Sync background processing failed for document {document_id}: {e}", exc_info=True)
+        
+        # Try to update status to failed
+        try:
+            if loop and not loop.is_closed():
+                loop.run_until_complete(
+                    asyncio.gather(update_status_failed(str(e)), return_exceptions=True)
+                )
+            else:
+                # Fallback: create new loop for error update or use thread executor
+                try:
+                    current_loop = asyncio.get_running_loop()
+                    # If we're in an event loop, use thread executor
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, update_status_failed(str(e)))
+                        future.result()
+                except RuntimeError:
+                    # No running loop, create new loop for error update
+                    error_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(error_loop)
+                    try:
+                        error_loop.run_until_complete(update_status_failed(str(e)))
+                    finally:
+                        error_loop.close()
+                    
+        except Exception as update_error:
+            logger.error(f"Failed to update error status for {document_id}: {update_error}")
+            
+    finally:
+        # Ensure loop is properly closed
+        if loop:
+            try:
+                # Cancel any pending tasks
+                pending_tasks = asyncio.all_tasks(loop)
+                for task in pending_tasks:
+                    task.cancel()
+                
+                # Wait for cancelled tasks to complete
+                if pending_tasks:
+                    loop.run_until_complete(
+                        asyncio.gather(*pending_tasks, return_exceptions=True)
+                    )
+                    
+            except Exception as cleanup_error:
+                logger.error(f"Error during loop cleanup for {document_id}: {cleanup_error}")
+            finally:
+                if not loop.is_closed():
+                    loop.close()
+                    logger.debug(f"Event loop closed for document {document_id}")
 
 # Assessment Document endpoints
 @router.post("/documents/upload", response_model=AssessmentDocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -370,15 +463,22 @@ async def upload_assessment_document(
         
         # SAFE OPERATION: Only trigger background processing if file exists
         if Path(file_path).exists():
+            file_size = Path(file_path).stat().st_size
+            logger.info(f"🔄 File validation PASSED: {file_path} ({file_size} bytes)")
+            logger.info(f"🔄 Adding background task: process_uploaded_document_background_sync")
+            logger.info(f"🔄 Task parameters: document_id={document_id}, file_path={file_path}")
+            
             background_tasks.add_task(
-                process_uploaded_document_background,
+                process_uploaded_document_background_sync,
                 document_id, 
                 file_path,
                 engine  # Pass engine to background task
             )
-            logger.info(f"🔄 Background processing queued for document {document_id}")
+            logger.info(f"🔄 Sync background processing queued for document {document_id}")
+            logger.info(f"🔄 Background task added successfully to FastAPI BackgroundTasks")
         else:
             logger.error(f"❌ File validation failed after save: {file_path}")
+            logger.error(f"❌ File does not exist, updating status to failed")
             await assessment_repo.update_assessment_document(
                 UUID(document_id),
                 {"processing_status": "failed", "error_message": "File validation failed after save"}
