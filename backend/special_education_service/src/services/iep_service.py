@@ -51,7 +51,8 @@ class IEPService:
         academic_year: str,
         initial_data: Dict[str, Any],
         user_id: UUID,
-        user_role: str
+        user_role: str,
+        enable_google_search_grounding: bool = False
     ) -> Dict[str, Any]:
         """Create new IEP using template and RAG generation"""
         
@@ -253,7 +254,8 @@ class IEPService:
                         "previous_assessments": previous_pls_data,
                         "academic_year": academic_year,
                         "user_context": {"user_id": user_id, "user_role": user_role}
-                    }
+                    },
+                    enable_google_search_grounding=enable_google_search_grounding
                 )
                 
                 # Convert enhanced response to legacy format
@@ -268,11 +270,20 @@ class IEPService:
                     "evidence_metadata": evidence_metadata,
                     "quality_score": evidence_metadata.get('quality_assessment', {}).get('overall_score', 0.0),
                     "evidence_sources": evidence_metadata.get('total_evidence_chunks', 0),
-                    "confidence_scores": evidence_metadata.get('confidence_scores', {})
+                    "confidence_scores": evidence_metadata.get('confidence_scores', {}),
+                    # 🌐 CRITICAL: Add grounding metadata if present
+                    "google_search_grounding": evidence_metadata.get('google_search_grounding', None)
                 })
                 
                 logger.info(f"📊 [BACKEND-SERVICE] Enhanced generation quality score: {evidence_metadata.get('quality_assessment', {}).get('overall_score', 0.0):.3f}")
                 logger.info(f"📚 [BACKEND-SERVICE] Evidence sources used: {evidence_metadata.get('total_evidence_chunks', 0)}")
+                
+                # 🌐 Log grounding status
+                if evidence_metadata.get('google_search_grounding'):
+                    grounding_data = evidence_metadata['google_search_grounding']
+                    logger.info(f"🌐 [BACKEND-SERVICE] Google Search grounding ACTIVE: {len(grounding_data.get('web_search_queries', []))} queries performed")
+                else:
+                    logger.warning(f"⚠️ [BACKEND-SERVICE] Google Search grounding NOT ACTIVE (requested: {enable_google_search_grounding})")
                 
             else:
                 logger.warning(f"⚠️ [BACKEND-SERVICE] Using deprecated legacy RAG generator...")
@@ -282,7 +293,8 @@ class IEPService:
                     template=template_data,
                     student_data=student_data,
                     previous_ieps=previous_ieps_data,
-                    previous_assessments=previous_pls_data
+                    previous_assessments=previous_pls_data,
+                    enable_google_search_grounding=enable_google_search_grounding
                 )
                 
                 # Add basic metadata
@@ -718,7 +730,8 @@ class IEPService:
         iep_id: UUID,
         section_name: str,
         additional_context: Optional[Dict[str, Any]] = None,
-        user_id: UUID = None
+        user_id: UUID = None,
+        enable_google_search_grounding: bool = False
     ) -> Dict[str, Any]:
         """Generate specific IEP section using RAG"""
         # Get IEP and template
@@ -742,7 +755,8 @@ class IEPService:
         section_content = await self.iep_generator._generate_section(
             section_name,
             section_template,
-            context
+            context,
+            enable_google_search_grounding
         )
         
         # Log generation

@@ -92,8 +92,9 @@ class MetadataAwareIEPGenerator:
         self,
         student_data: Dict[str, Any],
         template_data: Dict[str, Any],
-        generation_context: Optional[Dict[str, Any]] = None
-    ) -> Tuple[GeminiIEPResponse, Dict[str, Any]]:
+        generation_context: Optional[Dict[str, Any]] = None,
+        enable_google_search_grounding: bool = False
+    ) -> Tuple[Any, Dict[str, Any]]:
         """
         Generate IEP with metadata-aware content retrieval and evidence tracking
         
@@ -103,7 +104,7 @@ class MetadataAwareIEPGenerator:
             generation_context: Additional context for generation
             
         Returns:
-            Tuple[GeminiIEPResponse, Dict]: Generated IEP and evidence metadata
+            Tuple[IEPResponse, Dict]: Generated IEP (PLOP or standard format) and evidence metadata
         """
         
         start_time = datetime.now()
@@ -122,10 +123,14 @@ class MetadataAwareIEPGenerator:
             logger.info(f"🧠 Enhanced context built with {len(enhanced_context.get('sources', []))} sources")
             
             # Phase 3: Generate IEP content with Gemini
-            iep_response = await self._generate_iep_with_evidence(
-                student_data, template_data, enhanced_context
+            iep_response, grounding_metadata = await self._generate_iep_with_evidence(
+                student_data, template_data, enhanced_context, enable_google_search_grounding
             )
             logger.info("🤖 IEP content generated with Gemini")
+            
+            # Store grounding metadata in enhanced context for evidence metadata creation
+            if grounding_metadata:
+                enhanced_context['backend_grounding_metadata'] = grounding_metadata
             
             # Phase 4: Create evidence and attribution metadata
             evidence_metadata = await self._create_evidence_metadata(
@@ -302,8 +307,9 @@ class MetadataAwareIEPGenerator:
         self,
         student_data: Dict[str, Any],
         template_data: Dict[str, Any],
-        enhanced_context: Dict[str, Any]
-    ) -> GeminiIEPResponse:
+        enhanced_context: Dict[str, Any],
+        enable_google_search_grounding: bool = False
+    ) -> Tuple[Any, Optional[Dict[str, Any]]]:
         """Generate IEP content using enhanced context and evidence"""
         
         logger.info("🤖 Generating IEP with evidence-enhanced prompt...")
@@ -337,7 +343,8 @@ class MetadataAwareIEPGenerator:
                 student_data=enhanced_student_data,
                 template_data=template_data,
                 previous_ieps=None,  # Could be enhanced with metadata-aware previous IEP retrieval
-                previous_assessments=None
+                previous_assessments=None,
+                enable_google_search_grounding=enable_google_search_grounding
             )
             
             # Parse the response
@@ -350,13 +357,34 @@ class MetadataAwareIEPGenerator:
                 compressed_data = base64.b64decode(raw_response.encode('ascii'))
                 raw_response = gzip.decompress(compressed_data).decode('utf-8')
             
-            # Parse JSON response
+            # Parse JSON response - use appropriate schema based on template
             response_data = json.loads(raw_response)
-            iep_response = GeminiIEPResponse(**response_data)
+            
+            # Check if this is a PLOP template
+            is_plop_template = template_data.get('name', '').startswith('PLOP and Goals')
+            
+            if is_plop_template:
+                from ..schemas.plop_schemas import PLOPIEPResponse, convert_plop_to_standard_format
+                plop_response = PLOPIEPResponse(**response_data)
+                logger.info("🎯 Using PLOP schema for validation")
+                
+                # Convert PLOP to standard format for backward compatibility
+                standard_data = convert_plop_to_standard_format(plop_response)
+                iep_response = GeminiIEPResponse(**standard_data)
+                logger.info("🔄 Converted PLOP format to standard format for service compatibility")
+            else:
+                iep_response = GeminiIEPResponse(**response_data)
+                logger.info("📋 Using standard IEP schema for validation")
+            
+            # 🌐 CRITICAL FIX: Extract grounding metadata from generation result
+            grounding_metadata = None
+            if 'grounding_metadata' in generation_result and generation_result['grounding_metadata']:
+                grounding_metadata = generation_result['grounding_metadata']
+                logger.info(f"🌐 Grounding metadata found in generation result: {len(grounding_metadata.get('web_search_queries', []))} queries")
             
             logger.info("✅ IEP content generated successfully with evidence integration")
             
-            return iep_response
+            return iep_response, grounding_metadata
             
         except Exception as e:
             logger.error(f"❌ IEP generation failed: {e}")
@@ -480,7 +508,7 @@ class MetadataAwareIEPGenerator:
         self,
         evidence_collection: Dict[IEPSection, List[EnhancedSearchResult]],
         enhanced_context: Dict[str, Any],
-        iep_response: GeminiIEPResponse
+        iep_response: Any
     ) -> Dict[str, Any]:
         """Create comprehensive evidence and attribution metadata"""
         
@@ -489,7 +517,9 @@ class MetadataAwareIEPGenerator:
             'total_evidence_chunks': 0,
             'source_attribution': {},
             'confidence_scores': {},
-            'evidence_quality': enhanced_context['quality_summary']
+            'evidence_quality': enhanced_context['quality_summary'],
+            # 🌐 CRITICAL: Include backend grounding metadata if available
+            'google_search_grounding': enhanced_context.get('backend_grounding_metadata', None)
         }
         
         # Map evidence to IEP sections
@@ -544,7 +574,7 @@ class MetadataAwareIEPGenerator:
 
     async def _assess_generated_quality(
         self,
-        iep_response: GeminiIEPResponse,
+        iep_response: Any,
         evidence_metadata: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Assess the quality of generated IEP content"""

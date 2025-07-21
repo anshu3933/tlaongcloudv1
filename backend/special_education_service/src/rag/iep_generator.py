@@ -45,7 +45,8 @@ class IEPGenerator:
         template: Dict[str, Any],
         student_data: Dict[str, Any],
         previous_ieps: List[Dict[str, Any]],
-        previous_assessments: List[Dict[str, Any]]
+        previous_assessments: List[Dict[str, Any]],
+        enable_google_search_grounding: bool = False
     ) -> Dict[str, Any]:
         """Generate IEP content using RAG and Gemini"""
         
@@ -83,7 +84,7 @@ class IEPGenerator:
                 try:
                     logger.info(f"Generating section: {section_name}")
                     section_content = await self._generate_section(
-                        section_name, section_template, context
+                        section_name, section_template, context, enable_google_search_grounding
                     )
                     generated_content[section_name] = section_content
                     logger.info(f"Section {section_name} generated successfully")
@@ -167,52 +168,80 @@ class IEPGenerator:
         self, 
         section_name: str, 
         section_template: Dict,
-        context: Dict
+        context: Dict,
+        enable_google_search_grounding: bool = False
     ) -> Dict[str, Any]:
         """Generate individual IEP section"""
-        prompt = f"""
-        You are an expert special education professional creating an IEP section for the provided student.
         
-        Section: {section_name}
-        Template Requirements: {json.dumps(section_template)}
+        # Add grounding instructions if enabled
+        grounding_instructions = ""
+        if enable_google_search_grounding:
+            grounding_instructions = f"""
+🌐 GOOGLE SEARCH GROUNDING ENABLED FOR {section_name.upper()} SECTION:
+Research current best practices for {section_name} development in IEPs, including:
+- Latest evidence-based interventions for {context.get('disability_type')} students
+- Current Grade {context.get('grade_level')} standards and expectations
+- Recent developments in {section_name} accommodations and strategies
+- Evidence-based teaching methods for identified needs
+- Current compliance requirements for {section_name} sections
+
+"""
         
-        STUDENT PROFILE (USE EXACTLY AS PROVIDED):
-        - Student Name: {context.get('student_name', 'Student')}
-        - Disability Type: {context.get('disability_type', 'Not specified')}
-        - Grade Level: {context.get('grade_level', 'Not specified')}
-        - Case Manager: {context.get('case_manager_name', 'Not specified')}
-        - Placement Setting: {context.get('placement_setting', 'Not specified')}
-        - Service Hours per Week: {context.get('service_hours_per_week', 'Not specified')}
-        
-        ASSESSMENT DATA TO TRANSFORM:
-        - Current Achievement: {context.get('current_achievement', 'No data available')}
-        - Student Strengths: {context.get('strengths', 'To be determined')}
-        - Areas for Growth: {context.get('areas_for_growth', 'To be determined')}
-        - Learning Profile: {context.get('learning_profile', 'To be evaluated')}
-        - Student Interests: {context.get('interests', 'To be explored')}
-        
-        EDUCATIONAL PLANNING CONTEXT:
-        - Annual Goals: {context.get('annual_goals', 'To be developed')}
-        - Teaching Strategies: {context.get('teaching_strategies', 'To be determined')}
-        - Assessment Methods: {context.get('assessment_methods', 'To be determined')}
-        
-        HISTORICAL CONTEXT:
-        - Previous Assessments: {context.get('assessment_summary', 'No previous assessments')}
-        - Previous Goals: {context.get('previous_goals', 'No previous goals')}
-        
-        SIMILAR IEP EXAMPLES FOR EDUCATIONAL GUIDANCE:
-        {context.get('similar_examples', 'No similar examples found')}
-        
-        CRITICAL CONSTRAINTS:
-        1. DO NOT modify, expand, or generate personal details about the student
-        2. USE provided student information exactly as given
-        3. FOCUS on transforming assessment data into educational language
-        4. CONNECT assessment findings to instructional strategies and accommodations
-        5. CREATE measurable educational objectives based on assessment data
-        6. REFERENCE grade-level academic standards and educational frameworks
-        7. PROVIDE professional educational analysis, not personal storytelling
-        
-        Transform the assessment data into a professional {section_name} section that links educational needs to appropriate interventions and objectives.
+        prompt = f"""Create {section_name} for IEP document using Document AI extracted assessment data.
+{grounding_instructions}
+
+Context: {context.get('student_name')}, Grade {context.get('grade_level')}, {context.get('disability_type')}
+Evaluation Date: {context.get('evaluation_date', 'Current Year')} | Setting: {context.get('placement_setting', 'General Education with Support')}
+
+🔥 DOCUMENT AI EXTRACTED DATA FOR {section_name.upper()} SECTION:
+
+STANDARDIZED TEST SCORES:
+{self._format_test_scores_for_section(context, section_name)}
+
+PERFORMANCE LEVELS BY AREA:
+{self._format_performance_levels_for_section(context, section_name)}
+
+ASSESSMENT TEAM RECOMMENDATIONS:
+{self._format_recommendations_for_section(context, section_name)}
+
+IDENTIFIED STRENGTHS/CONCERNS:
+{self._format_strengths_concerns_for_section(context, section_name)}
+
+SECTION-SPECIFIC REQUIREMENTS for {section_name}:
+
+Present Levels Sections:
+- Reference specific standard scores and percentiles from extracted data
+- Convert numerical scores to descriptive performance levels
+- Include grade-equivalent scores where available
+- Cite specific assessment instruments used
+
+Annual Goals Sections:
+- Base measurable outcomes on current performance data from Document AI
+- Target areas showing below-average performance (<85 standard score)
+- Use extracted educational objectives as goal foundation
+- Include baseline data from assessment results
+
+Services/Accommodations Sections:
+- Link accommodations to specific processing weaknesses identified
+- Reference assessment team recommendations for service types
+- Use score severity to justify service intensity
+- Connect cognitive patterns to instructional needs
+
+CRITICAL CONSTRAINTS:
+1. USE Document AI extracted data as primary source for all content
+2. REFERENCE specific test scores, percentiles, and assessment instruments
+3. TRANSFORM assessment data into professional educational language
+4. CONNECT assessment findings to evidence-based interventions
+5. INCLUDE actual numerical data in performance descriptions
+6. BASE all recommendations on extracted assessment team suggestions
+
+Generate content that:
+- Aligns with {context.get('disability_type')} eligibility criteria based on extracted scores
+- References Grade {context.get('grade_level')} standards and expectations  
+- Uses actual assessment data to justify educational decisions
+- Transforms Document AI findings into IEP-appropriate language
+- Includes specific test scores and performance metrics
+- Connects assessment results to instructional strategies
         
         IMPORTANT: Return ONLY valid JSON. Do not include any markdown formatting, explanations, or additional text.
         Escape all quotes in content with backslashes. Example:
@@ -228,10 +257,28 @@ class IEPGenerator:
             logger.info(f"Sending request to Gemini for section {section_name}")
             logger.info(f"Prompt length: {len(prompt)} characters")
             
-            response = await asyncio.to_thread(
-                self.model.generate_content,
-                prompt
-            )
+            # Add grounding support if enabled
+            if enable_google_search_grounding:
+                import google.ai.generativelanguage as glm
+                logger.info(f"🌐 Enabling Google Search grounding for section {section_name}")
+                
+                # Create tools with Google Search grounding
+                grounding_tools = [
+                    glm.Tool(
+                        google_search_retrieval=glm.GoogleSearchRetrieval()
+                    )
+                ]
+                
+                response = await asyncio.to_thread(
+                    self.model.generate_content,
+                    prompt,
+                    tools=grounding_tools
+                )
+            else:
+                response = await asyncio.to_thread(
+                    self.model.generate_content,
+                    prompt
+                )
             
             logger.info(f"Gemini response received for section {section_name}")
             logger.info(f"Response object type: {type(response)}")
@@ -637,3 +684,193 @@ class IEPGenerator:
                 all_goals.extend(goals)
             # If content is a string, we can't extract goals from it
         return all_goals
+    
+    def _format_test_scores_for_section(self, context: Dict, section_name: str) -> str:
+        """
+        Format Document AI extracted test scores for specific IEP section
+        """
+        test_scores = context.get('test_scores', [])
+        if not test_scores:
+            return "No standardized test scores available from Document AI extraction."
+        
+        # Filter scores relevant to the section
+        section_relevant_scores = []
+        
+        if section_name.lower() in ['reading', 'oral_language']:
+            # Include reading and language-related scores
+            relevant_tests = ['Basic Reading', 'Reading Comprehension', 'Verbal Comprehension', 'Oral Language']
+            section_relevant_scores = [s for s in test_scores if any(test in s.get('subtest_name', '') for test in relevant_tests)]
+        elif section_name.lower() in ['math', 'concept']:
+            # Include math and reasoning scores
+            relevant_tests = ['Math', 'Numerical', 'Perceptual Reasoning', 'Math Problem Solving', 'Math Computation']
+            section_relevant_scores = [s for s in test_scores if any(test in s.get('subtest_name', '') for test in relevant_tests)]
+        elif section_name.lower() in ['writing', 'spelling']:
+            # Include writing-related scores
+            relevant_tests = ['Written Expression', 'Spelling', 'Writing']
+            section_relevant_scores = [s for s in test_scores if any(test in s.get('subtest_name', '') for test in relevant_tests)]
+        else:
+            # For other sections, include all scores
+            section_relevant_scores = test_scores[:8]  # Limit to prevent overflow
+        
+        if not section_relevant_scores:
+            section_relevant_scores = test_scores[:5]  # Fallback to first 5 scores
+        
+        formatted_scores = []
+        for score in section_relevant_scores:
+            test_name = score.get('test_name', 'Unknown Test')
+            subtest_name = score.get('subtest_name', 'Unknown Subtest')
+            standard_score = score.get('standard_score', 'N/A')
+            percentile = score.get('percentile_rank', score.get('extraction_confidence', 0))
+            
+            score_line = f"• {test_name} - {subtest_name}: Standard Score {standard_score}"
+            if percentile:
+                score_line += f" ({percentile}th percentile)"
+            
+            # Add educational interpretation
+            if isinstance(standard_score, int):
+                if standard_score < 85:
+                    score_line += " [Below Average - Intervention Needed]"
+                elif standard_score < 115:
+                    score_line += " [Average Range]"
+                else:
+                    score_line += " [Above Average - Potential Strength]"
+            
+            formatted_scores.append(score_line)
+        
+        return "\n".join(formatted_scores) if formatted_scores else "No relevant test scores found for this section."
+    
+    def _format_performance_levels_for_section(self, context: Dict, section_name: str) -> str:
+        """
+        Format Document AI extracted performance levels for specific IEP section
+        """
+        performance_levels = context.get('performance_levels', {})
+        if not performance_levels:
+            return "No performance level data available from Document AI extraction."
+        
+        # Filter performance levels relevant to the section
+        section_relevant_areas = []
+        
+        if section_name.lower() in ['reading', 'oral_language']:
+            relevant_areas = ['reading', 'oral_language', 'language']
+        elif section_name.lower() in ['math', 'concept']:
+            relevant_areas = ['math', 'mathematics', 'concept', 'reasoning']
+        elif section_name.lower() in ['writing', 'spelling']:
+            relevant_areas = ['writing', 'written_expression', 'spelling']
+        elif section_name.lower() in ['behavior', 'attention']:
+            relevant_areas = ['behavior', 'attention', 'focus']
+        else:
+            relevant_areas = list(performance_levels.keys())[:3]  # First 3 areas
+        
+        formatted_levels = []
+        for area, level_data in performance_levels.items():
+            if any(relevant in area.lower() for relevant in relevant_areas):
+                if isinstance(level_data, dict):
+                    current_level = level_data.get('current_level', 'Not specified')
+                    formatted_levels.append(f"• {area.title()}: {current_level}")
+                    
+                    # Add additional notes if available
+                    additional_notes = level_data.get('additional_notes', [])
+                    if additional_notes:
+                        for note in additional_notes[:2]:  # Limit to 2 notes
+                            formatted_levels.append(f"  - {note}")
+                elif isinstance(level_data, str):
+                    formatted_levels.append(f"• {area.title()}: {level_data}")
+        
+        return "\n".join(formatted_levels) if formatted_levels else "No relevant performance levels found for this section."
+    
+    def _format_recommendations_for_section(self, context: Dict, section_name: str) -> str:
+        """
+        Format Document AI extracted assessment team recommendations for specific IEP section
+        """
+        recommendations = context.get('recommendations', [])
+        if not recommendations:
+            return "No assessment team recommendations available from Document AI extraction."
+        
+        # Filter recommendations relevant to the section
+        section_keywords = {
+            'reading': ['reading', 'decode', 'comprehension', 'phonics', 'fluency'],
+            'oral_language': ['language', 'verbal', 'communication', 'speaking', 'listening'],
+            'math': ['math', 'mathematics', 'calculation', 'problem solving', 'numeracy'],
+            'writing': ['writing', 'written expression', 'composition', 'handwriting'],
+            'spelling': ['spelling', 'orthography', 'word recognition'],
+            'behavior': ['behavior', 'attention', 'focus', 'self-regulation', 'social'],
+            'services': ['services', 'therapy', 'support', 'accommodation', 'modification']
+        }
+        
+        relevant_keywords = section_keywords.get(section_name.lower(), [])
+        section_relevant_recs = []
+        
+        for rec in recommendations:
+            rec_text = rec if isinstance(rec, str) else str(rec)
+            if any(keyword in rec_text.lower() for keyword in relevant_keywords):
+                section_relevant_recs.append(rec_text)
+        
+        # If no section-specific recommendations found, include general ones
+        if not section_relevant_recs:
+            section_relevant_recs = recommendations[:4]  # First 4 general recommendations
+        
+        formatted_recs = []
+        for i, rec in enumerate(section_relevant_recs[:5], 1):  # Limit to 5 recommendations
+            if isinstance(rec, str) and len(rec.strip()) > 10:
+                formatted_recs.append(f"{i}. {rec.strip()}")
+        
+        return "\n".join(formatted_recs) if formatted_recs else "No relevant recommendations found for this section."
+    
+    def _format_strengths_concerns_for_section(self, context: Dict, section_name: str) -> str:
+        """
+        Format Document AI extracted strengths and concerns for specific IEP section
+        """
+        strengths = context.get('strengths', [])
+        areas_of_concern = context.get('areas_of_concern', [])
+        
+        formatted_content = []
+        
+        # Filter strengths relevant to section
+        if strengths:
+            section_keywords = {
+                'reading': ['reading', 'decode', 'comprehension', 'phonics'],
+                'oral_language': ['language', 'verbal', 'communication', 'speaking'],
+                'math': ['math', 'mathematics', 'calculation', 'problem solving'],
+                'writing': ['writing', 'written', 'composition'],
+                'spelling': ['spelling', 'word recognition'],
+                'behavior': ['behavior', 'attention', 'social', 'self-regulation']
+            }
+            
+            relevant_keywords = section_keywords.get(section_name.lower(), [])
+            relevant_strengths = []
+            
+            for strength in strengths:
+                strength_text = strength if isinstance(strength, str) else str(strength)
+                if any(keyword in strength_text.lower() for keyword in relevant_keywords):
+                    relevant_strengths.append(strength_text)
+            
+            if not relevant_strengths:
+                relevant_strengths = strengths[:3]  # First 3 general strengths
+            
+            if relevant_strengths:
+                formatted_content.append("STRENGTHS:")
+                for strength in relevant_strengths[:3]:
+                    if isinstance(strength, str) and len(strength.strip()) > 5:
+                        formatted_content.append(f"• {strength.strip()}")
+        
+        # Filter concerns relevant to section
+        if areas_of_concern:
+            relevant_concerns = []
+            
+            for concern in areas_of_concern:
+                concern_text = concern if isinstance(concern, str) else str(concern)
+                if any(keyword in concern_text.lower() for keyword in relevant_keywords if 'relevant_keywords' in locals()):
+                    relevant_concerns.append(concern_text)
+            
+            if not relevant_concerns:
+                relevant_concerns = areas_of_concern[:3]  # First 3 general concerns
+            
+            if relevant_concerns:
+                if formatted_content:  # Add spacing if strengths were added
+                    formatted_content.append("")
+                formatted_content.append("AREAS OF CONCERN:")
+                for concern in relevant_concerns[:3]:
+                    if isinstance(concern, str) and len(concern.strip()) > 5:
+                        formatted_content.append(f"• {concern.strip()}")
+        
+        return "\n".join(formatted_content) if formatted_content else "No specific strengths or concerns identified for this section."

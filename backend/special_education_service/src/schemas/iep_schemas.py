@@ -97,6 +97,10 @@ class IEPCreateWithRAG(IEPBase):
     student_id: UUID
     template_id: Optional[UUID] = None  # Optional for demo mode
     goals: List[IEPGoalCreate] = Field(default_factory=list, description="Initial goals")
+    enable_google_search_grounding: Optional[bool] = Field(
+        default=False, 
+        description="Enable Google Search grounding for enhanced IEP generation with current research and best practices"
+    )
     
     @validator('goals')
     def validate_goals_not_empty_if_provided(cls, v):
@@ -148,6 +152,10 @@ class IEPGenerateSection(BaseModel):
     """Schema for generating IEP sections"""
     section_name: str = Field(..., description="Name of section to generate")
     additional_context: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional context for generation")
+    enable_google_search_grounding: Optional[bool] = Field(
+        default=False, 
+        description="Enable Google Search grounding for enhanced section generation with current research"
+    )
 
 class IEPVersionHistory(BaseModel):
     """IEP version history entry"""

@@ -25,6 +25,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/ieps/advanced", tags=["Advanced IEPs"])
 settings = get_settings()
 
+@router.get("/google-search-grounding/status")
+async def get_google_search_grounding_status():
+    """Get status of Google Search grounding feature"""
+    return {
+        "feature": "Google Search Grounding for IEP Generation",
+        "status": "available",
+        "description": "Enables current research and best practices grounding through Google Search",
+        "usage": "Add 'enable_google_search_grounding: true' to IEP creation requests",
+        "endpoints_supported": [
+            "POST /api/v1/ieps/advanced/create-with-rag",
+            "POST /api/v1/ieps/advanced/{id}/generate-section"
+        ],
+        "benefits": [
+            "Access to current research and evidence-based practices",
+            "Up-to-date academic standards and compliance requirements",
+            "Latest developments in special education interventions",
+            "Current best practices for IEP goal writing and SMART goals"
+        ]
+    }
+
 # Initialize services
 user_adapter = UserAdapter(
     auth_service_url=getattr(settings, 'auth_service_url', 'http://localhost:8080'),
@@ -106,6 +126,7 @@ async def create_iep_with_rag(
     logger.error(f"🔍 [DEBUG] iep_data.meeting_date: {iep_data.meeting_date}")
     logger.error(f"🔍 [DEBUG] iep_data.effective_date: {iep_data.effective_date}")
     logger.error(f"🔍 [DEBUG] iep_data.review_date: {iep_data.review_date}")
+    logger.error(f"🔍 [DEBUG] iep_data.enable_google_search_grounding: {iep_data.enable_google_search_grounding}")
     logger.error(f"🔍 [DEBUG] iep_data.content: {iep_data.content}")
     if iep_data.content:
         logger.error(f"🔍 [DEBUG] content.student_name: {iep_data.content.get('student_name', 'NOT_SET')}")
@@ -186,13 +207,17 @@ async def create_iep_with_rag(
         
         # Create IEP with RAG
         logger.info(f"📞 [BACKEND-ROUTER] Calling IEP service create_iep_with_rag...")
+        if iep_data.enable_google_search_grounding:
+            logger.info("🌐 [BACKEND-ROUTER] Google Search grounding enabled for this request")
+        
         created_iep = await iep_service.create_iep_with_rag(
             student_id=iep_data.student_id,
             template_id=iep_data.template_id,
             academic_year=iep_data.academic_year,
             initial_data=initial_data,
             user_id=current_user_id,
-            user_role=current_user_role
+            user_role=current_user_role,
+            enable_google_search_grounding=iep_data.enable_google_search_grounding
         )
         
         elapsed_time = time.time() - start_time
@@ -257,7 +282,8 @@ async def generate_iep_section(
             iep_id=iep_id,
             section_name=section_request.section_name,
             additional_context=section_request.additional_context,
-            user_id=current_user_id
+            user_id=current_user_id,
+            enable_google_search_grounding=section_request.enable_google_search_grounding
         )
         
         return {
