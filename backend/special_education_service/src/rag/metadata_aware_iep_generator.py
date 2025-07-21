@@ -360,6 +360,13 @@ class MetadataAwareIEPGenerator:
             # Parse JSON response - use appropriate schema based on template
             response_data = json.loads(raw_response)
             
+            # 🔧 DEFENSIVE FIX: Truncate evidence_based_improvements if too many are generated
+            if 'grounding_metadata' in response_data and response_data['grounding_metadata']:
+                grounding = response_data['grounding_metadata']
+                if 'evidence_based_improvements' in grounding and len(grounding['evidence_based_improvements']) > 20:
+                    logger.warning(f"⚠️ Truncating evidence_based_improvements from {len(grounding['evidence_based_improvements'])} to 20 items")
+                    grounding['evidence_based_improvements'] = grounding['evidence_based_improvements'][:20]
+            
             # Check if this is a PLOP template
             is_plop_template = template_data.get('name', '').startswith('PLOP and Goals')
             

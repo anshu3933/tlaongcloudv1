@@ -449,6 +449,7 @@ When Google Search grounding is enabled, you MUST:
          "source_type": "research study/best practice/current standard/legal requirement"
        }}
      ],
+⚠️ IMPORTANT: Limit evidence_based_improvements to maximum 15 items to ensure schema compliance.
      "current_research_applied": "brief summary of how current research enhanced the IEP recommendations"
    }}
 
@@ -473,39 +474,48 @@ The disability type and grade level above are extracted from the actual assessme
             # Special PLOP format instructions
             plop_instructions = f"""
 🎯 PLOP (Present Levels of Performance) FORMAT REQUIREMENTS:
-This is a PLOP template that requires a SPECIFIC OUTPUT FORMAT. You MUST follow this exact structure:
+This is a PLOP template that generates COMPREHENSIVE, DETAILED content for each domain. You MUST:
 
-For each section (oral_language, reading_familiar, reading_unfamiliar, reading_comprehension, spelling, writing, handwriting, grammar, concept, math, behaviour):
+1. Generate 500-1500 characters per field (present_level, goals, recommendations)
+2. Use specific assessment data, test scores, and percentile information when available
+3. Include precise performance metrics and educational terminology
+4. Reference specific grade levels, curriculum standards, and intervention strategies
+5. Create individualized content that reflects the unique student profile
 
-REQUIRED STRUCTURE:
+REQUIRED STRUCTURE for each section:
 {{
   "section_name": {{
-    "current_grade": "Grade X" (where applicable),
-    "present_level": "Detailed present level description...",
-    "goals": "Specific goals for this area...",
-    "recommendations": "Evidence-based recommendations..."
+    "current_grade": "Grade X" (where applicable based on performance, not chronological grade),
+    "present_level": "DETAILED description including specific strengths, weaknesses, current performance levels, assessment results, percentiles, observable behaviors, and educational impact...",
+    "goals": "SPECIFIC, MEASURABLE goals with timelines, criteria, conditions, and methods of assessment. Include percentage targets, time frames, and observable behaviors...",
+    "recommendations": "EVIDENCE-BASED strategies, accommodations, instructional methods, materials, frequency of interventions, and specific approaches tailored to this student's needs..."
   }}
 }}
 
-EXAMPLE OUTPUT FORMAT (you MUST follow this exact pattern):
+CONTENT QUALITY REQUIREMENTS:
+- Present Level: Include specific percentiles, grade equivalents, standard scores when available
+- Goals: Must be SMART goals with specific measurement criteria and timelines
+- Recommendations: Must include specific instructional strategies, materials, frequency, and research-based interventions
+- Use actual student data from assessments rather than generic descriptions
+- Reference specific curriculum, teaching methods, and educational frameworks
+- Include performance metrics (percentages, time measures, accuracy rates)
+
+EXAMPLE HIGH-QUALITY OUTPUT:
 {{
   "oral_language": {{
     "current_grade": "Grade 4",
-    "present_level": "Has age-appropriate vocabulary and can speak in complete sentences. Commits grammatical mistakes during sentence construction. Can understand 2-step instructions, but follows one-step and task-based instructions with reminders...",
-    "goals": "Student E will improve grammatical accuracy in sentence construction and general conversation. Student E will consistently follow multi-step instructions without frequent reminders...",
-    "recommendations": "Focus on structured grammar exercises, practice following multi-step instructions, and encourage verbal expression in complete sentences."
-  }},
-  "reading_familiar": {{
-    "current_grade": "Grade 4",
-    "present_level": "Able to read Grade 4 level text with 90% accuracy.",
-    "goals": "Student E will maintain 90% accuracy in reading Grade 4 level familiar texts.",
-    "recommendations": "Continue providing Grade 4 level familiar texts for practice to maintain current reading proficiency."
+    "present_level": "{student_data.get('student_name', 'Student')} demonstrates mixed performance in oral language skills. Receptively, {student_data.get('student_name', 'Student')} can understand and follow 1-2 step directions with 85% accuracy in structured settings, but requires visual cues and repetition for multi-step instructions (3+ steps), achieving only 60% accuracy. Vocabulary knowledge is at approximately 3rd grade level based on curriculum assessments, with strong performance in concrete nouns and action verbs but significant difficulty with abstract concepts, temporal concepts, and inferential language. Expressively, {student_data.get('student_name', 'Student')} uses primarily simple sentence structures with occasional compound sentences, demonstrating grammatical errors in verb tense consistency (40% error rate), subject-verb agreement (30% error rate), and pronoun usage (25% error rate) during informal conversation samples...",
+    "goals": "By [specific date], {student_data.get('student_name', 'Student')} will independently follow 3-step oral directions in academic settings with 80% accuracy across 5 consecutive data collection sessions. {student_data.get('student_name', 'Student')} will use grammatically correct sentences (including proper verb tense and subject-verb agreement) in 90% of observed utterances during structured academic discussions over 3 consecutive weeks. {student_data.get('student_name', 'Student')} will demonstrate comprehension of grade-level vocabulary by accurately defining and using 15 new abstract vocabulary words per month with 75% accuracy in multiple contexts...",
+    "recommendations": "Implement explicit vocabulary instruction using semantic mapping and visual supports. Provide systematic grammar instruction focusing on verb tense consistency through structured practice activities 3x weekly. Use visual direction cards and checklist strategies to support multi-step direction following. Incorporate oral language practice through structured peer discussions and presentation opportunities. Utilize graphic organizers for expressive language tasks and provide sentence starters for complex responses. Implement daily 10-minute vocabulary review sessions using researched-based techniques such as..."
   }}
 }}
 
-⚠️ CRITICAL: Do NOT use the standard IEP format. Use ONLY the PLOP format shown above.
-⚠️ Replace "Student E" with the actual student name: {student_data.get('student_name', 'Student')}
-⚠️ Use actual grade levels appropriate to each domain based on assessment data
+⚠️ CRITICAL REQUIREMENTS:
+- Use ONLY the PLOP format shown above, NOT standard IEP format
+- Replace generic references with actual student name: {student_data.get('student_name', 'Student')}
+- Generate 11 comprehensive sections: oral_language, reading_familiar, reading_unfamiliar, reading_comprehension, spelling, writing, handwriting, grammar, concept, math, behaviour
+- Each section must contain detailed, individualized content based on assessment data
+- Include specific performance data, percentiles, and grade equivalents when available
 """
             format_instructions = plop_instructions
         else:

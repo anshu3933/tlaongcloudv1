@@ -98,7 +98,7 @@ class GroundingImprovementSchema(StrictGeminiModel):
 class GroundingMetadataSchema(StrictGeminiModel):
     google_search_used: bool
     search_queries_performed: List[str] = Field(..., min_items=1, max_items=20)
-    evidence_based_improvements: List[GroundingImprovementSchema] = Field(..., min_items=1, max_items=10)
+    evidence_based_improvements: List[GroundingImprovementSchema] = Field(..., min_items=1, max_items=20)
     current_research_applied: str = Field(..., min_length=10, max_length=1000)
 
 
