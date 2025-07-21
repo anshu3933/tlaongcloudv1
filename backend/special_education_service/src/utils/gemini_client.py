@@ -352,7 +352,7 @@ class GeminiClient:
             "student_info": {
                 "name": "John Doe",
                 "dob": "2015-03-15",
-                "class": "Grade 5",
+                "class": "{student_grade}",  # Will be replaced with actual grade from assessment
                 "date_of_iep": "2025-01-15"
             },
             "long_term_goal": "Student will demonstrate grade-level proficiency in reading comprehension and mathematical reasoning by the end of the academic year.",
@@ -401,9 +401,9 @@ class GeminiClient:
             "grounding_metadata": {
                 "google_search_used": True,
                 "search_queries_performed": [
-                    "evidence-based reading interventions specific learning disability grade 5",
+                    "evidence-based reading interventions specific learning disability {student_grade}",
                     "IEP goal writing best practices 2025",
-                    "grade 5 academic standards mathematics"
+                    "{student_grade} academic standards mathematics"
                 ],
                 "evidence_based_improvements": [
                     {
@@ -449,8 +449,11 @@ When Google Search grounding is enabled, you MUST:
          "source_type": "research study/best practice/current standard/legal requirement"
        }}
      ],
-⚠️ IMPORTANT: Limit evidence_based_improvements to maximum 15 items to ensure schema compliance.
-     "current_research_applied": "brief summary of how current research enhanced the IEP recommendations"
+⚠️ CRITICAL LIMITS FOR SCHEMA COMPLIANCE:
+   - evidence_based_improvements: MAXIMUM 15 items
+   - search_queries_performed: MAXIMUM 15 items  
+   - current_research_applied: MAXIMUM 800 characters
+     "current_research_applied": "brief summary of how current research enhanced the IEP recommendations (MAX 800 chars)"
    }}
 
 2. In your content generation, incorporate and acknowledge current research findings
@@ -485,12 +488,18 @@ This is a PLOP template that generates COMPREHENSIVE, DETAILED content for each 
 REQUIRED STRUCTURE for each section:
 {{
   "section_name": {{
-    "current_grade": "Grade X" (where applicable based on performance, not chronological grade),
+    "current_grade": "Grade N where N is the actual performance level from assessment (e.g., 'Grade 2', 'Grade 3')",
     "present_level": "DETAILED description including specific strengths, weaknesses, current performance levels, assessment results, percentiles, observable behaviors, and educational impact...",
     "goals": "SPECIFIC, MEASURABLE goals with timelines, criteria, conditions, and methods of assessment. Include percentage targets, time frames, and observable behaviors...",
     "recommendations": "EVIDENCE-BASED strategies, accommodations, instructional methods, materials, frequency of interventions, and specific approaches tailored to this student's needs..."
   }}
 }}
+
+🚨 PLOP GRADE-LEVEL RULES:
+- current_grade MUST come from assessment data, NOT student's chronological grade
+- If assessment shows "Grade 2 performance in reading", use "Grade 2" for reading sections
+- If assessment shows different grades for different skills, use the EXACT grades mentioned
+- NEVER assume or generate grade levels not in the assessment
 
 CONTENT QUALITY REQUIREMENTS:
 - Present Level: Include specific percentiles, grade equivalents, standard scores when available
@@ -500,10 +509,10 @@ CONTENT QUALITY REQUIREMENTS:
 - Reference specific curriculum, teaching methods, and educational frameworks
 - Include performance metrics (percentages, time measures, accuracy rates)
 
-EXAMPLE HIGH-QUALITY OUTPUT:
+EXAMPLE HIGH-QUALITY OUTPUT (grades from assessment):
 {{
   "oral_language": {{
-    "current_grade": "Grade 4",
+    "current_grade": "Grade X",  # X = actual grade from assessment
     "present_level": "{student_data.get('student_name', 'Student')} demonstrates mixed performance in oral language skills. Receptively, {student_data.get('student_name', 'Student')} can understand and follow 1-2 step directions with 85% accuracy in structured settings, but requires visual cues and repetition for multi-step instructions (3+ steps), achieving only 60% accuracy. Vocabulary knowledge is at approximately 3rd grade level based on curriculum assessments, with strong performance in concrete nouns and action verbs but significant difficulty with abstract concepts, temporal concepts, and inferential language. Expressively, {student_data.get('student_name', 'Student')} uses primarily simple sentence structures with occasional compound sentences, demonstrating grammatical errors in verb tense consistency (40% error rate), subject-verb agreement (30% error rate), and pronoun usage (25% error rate) during informal conversation samples...",
     "goals": "By [specific date], {student_data.get('student_name', 'Student')} will independently follow 3-step oral directions in academic settings with 80% accuracy across 5 consecutive data collection sessions. {student_data.get('student_name', 'Student')} will use grammatically correct sentences (including proper verb tense and subject-verb agreement) in 90% of observed utterances during structured academic discussions over 3 consecutive weeks. {student_data.get('student_name', 'Student')} will demonstrate comprehension of grade-level vocabulary by accurately defining and using 15 new abstract vocabulary words per month with 75% accuracy in multiple contexts...",
     "recommendations": "Implement explicit vocabulary instruction using semantic mapping and visual supports. Provide systematic grammar instruction focusing on verb tense consistency through structured practice activities 3x weekly. Use visual direction cards and checklist strategies to support multi-step direction following. Incorporate oral language practice through structured peer discussions and presentation opportunities. Utilize graphic organizers for expressive language tasks and provide sentence starters for complex responses. Implement daily 10-minute vocabulary review sessions using researched-based techniques such as..."
@@ -522,6 +531,14 @@ EXAMPLE HIGH-QUALITY OUTPUT:
             format_instructions = ""
 
         prompt = f"""You are an expert special education specialist creating comprehensive evidence-based IEP content.
+
+🚨 ABSOLUTE GRADE-LEVEL CONSTRAINT 🚨
+ALL grade levels in this IEP MUST come EXCLUSIVELY from the assessment data provided.
+- DO NOT use any grade levels not explicitly mentioned in the assessment
+- If assessment shows different performance levels (e.g., Grade 4 reading, Grade 2 math), use those EXACT levels
+- NEVER assume, generate, or impose grade levels beyond what's documented
+- All curriculum standards, interventions, and goals must match assessment-specified grades
+
 {grounding_instructions}
 {format_instructions}
 CRITICAL INSTRUCTIONS:
@@ -577,12 +594,17 @@ DOCUMENT AI DATA TRANSFORMATION REQUIREMENTS:
 
 🎯 EXTRACTED STUDENT PROFILE FROM ASSESSMENT DATA:
 Name: {student_data.get('student_name', 'Student')}
-Grade: {student_data.get('grade_level', 'Not specified')} (CRITICAL: Use this exact grade level from assessment)
+Grade: {student_data.get('grade_level', 'Not specified')}
 Disability: {student_data.get('disability_type', 'Not specified')}
 Case Manager: {student_data.get('case_manager_name', 'Not specified')}
 
-CRITICAL GRADE-LEVEL CONSTRAINT: This student is in grade {student_data.get('grade_level', 'Not specified')} based on assessment data. 
-ALL IEP content must be appropriate for grade {student_data.get('grade_level', 'Not specified')} academic standards and developmental expectations.
+🚨 CRITICAL GRADE-LEVEL CONSTRAINTS - MUST READ 🚨
+1. The student's grade level(s) come EXCLUSIVELY from the assessment data provided above
+2. DO NOT assume or impose any grade levels not explicitly mentioned in the assessment
+3. If the assessment shows different performance levels across domains (e.g., Grade 4 in reading, Grade 2 in math), respect and use those EXACT levels
+4. ALL curriculum recommendations must match the grade levels from the assessment data
+5. NEVER generate content for grade levels not documented in the assessment
+6. When searching for interventions or standards, use ONLY the grade levels from the assessment
 
 TEMPLATE STRUCTURE:
 {json.dumps(template_data, indent=2)}

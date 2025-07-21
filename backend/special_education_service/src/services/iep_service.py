@@ -261,6 +261,17 @@ class IEPService:
                 # Convert enhanced response to legacy format
                 iep_content = iep_response.model_dump()
                 
+                # 🎯 DEBUG: Log PLOP grounding metadata handling
+                template_name = template_data.get("name", "")
+                is_plop = template_name.startswith("PLOP and Goals")
+                if is_plop:
+                    logger.info(f"🎯 PLOP TEMPLATE DETECTED: {template_name}")
+                    logger.info(f"🎯 PLOP content keys before metadata update: {list(iep_content.keys())}")
+                    if 'grounding_metadata' in iep_content:
+                        logger.info(f"🎯 PLOP grounding_metadata found in iep_content: {iep_content['grounding_metadata']}")
+                    if 'plop_sections' in iep_content:
+                        logger.info(f"🎯 PLOP sections preserved in content")
+                
                 # Add enhanced metadata
                 iep_content.update({
                     "template_used": template_data.get("name", "Default IEP Template"),
@@ -284,6 +295,14 @@ class IEPService:
                     logger.info(f"🌐 [BACKEND-SERVICE] Google Search grounding ACTIVE: {len(grounding_data.get('web_search_queries', []))} queries performed")
                 else:
                     logger.warning(f"⚠️ [BACKEND-SERVICE] Google Search grounding NOT ACTIVE (requested: {enable_google_search_grounding})")
+                
+                # 🎯 DEBUG: Final PLOP content check
+                if is_plop:
+                    logger.info(f"🎯 PLOP FINAL content keys after metadata update: {list(iep_content.keys())}")
+                    if 'google_search_grounding' in iep_content:
+                        logger.info(f"🎯 PLOP google_search_grounding in final content: {bool(iep_content['google_search_grounding'])}")
+                        if iep_content['google_search_grounding']:
+                            logger.info(f"🎯 PLOP grounding keys: {list(iep_content['google_search_grounding'].keys())}")
                 
             else:
                 logger.warning(f"⚠️ [BACKEND-SERVICE] Using deprecated legacy RAG generator...")

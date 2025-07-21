@@ -4,11 +4,11 @@ for generating output in the exact format requested by the user.
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict
 
 class PLOPSectionWithGrade(BaseModel):
     """PLOP section with current grade (for academic domains)"""
-    current_grade: str = Field(..., description="Current grade level for this domain (e.g., 'Grade 4')")
+    current_grade: str = Field(..., description="Current performance grade level for this domain from assessment data")
     present_level: str = Field(..., description="Detailed present level of performance description")
     goals: str = Field(..., description="Specific measurable goals for improvement")
     recommendations: str = Field(..., description="Evidence-based recommendations for instruction")
@@ -18,6 +18,13 @@ class PLOPSectionWithoutGrade(BaseModel):
     present_level: str = Field(..., description="Detailed present level of performance description")
     goals: str = Field(..., description="Specific measurable goals for improvement")
     recommendations: str = Field(..., description="Evidence-based recommendations for instruction")
+
+class PLOPStudentInfo(BaseModel):
+    """Student information for PLOP format"""
+    name: str = Field(..., description="Student name")
+    dob: str = Field(..., description="Date of birth in YYYY-MM-DD format")
+    class_: str = Field(..., alias="class", min_length=1, max_length=20, description="Current grade level from assessment")
+    date_of_iep: str = Field(..., description="IEP date in YYYY-MM-DD format")
 
 class PLOPIEPResponse(BaseModel):
     """
@@ -31,6 +38,9 @@ class PLOPIEPResponse(BaseModel):
     Goals: [specific goals]
     Recommendations: [evidence-based recommendations]
     """
+    
+    # Student information (required)
+    student_info: PLOPStudentInfo = Field(..., description="Student demographic information")
     
     # Academic domains with grade levels
     oral_language: PLOPSectionWithGrade = Field(..., description="Oral Language – Receptive and Expressive")
@@ -57,20 +67,26 @@ class PLOPIEPResponse(BaseModel):
     def get_example(cls):
         """Get an example of the expected PLOP format"""
         return {
+            "student_info": {
+                "name": "Student Name",
+                "dob": "2015-01-01",
+                "class": "Grade X",  # X from assessment
+                "date_of_iep": "2025-01-21"
+            },
             "oral_language": {
-                "current_grade": "Grade 4",
+                "current_grade": "Grade X",  # X from assessment
                 "present_level": "Has age-appropriate vocabulary and can speak in complete sentences. Commits grammatical mistakes during sentence construction. Can understand 2-step instructions, but follows one-step and task-based instructions with reminders. Can convey needs/wants and answer questions on personal information in sentences, though sometimes in phrases. Has adequate general and concept vocabulary, but struggles with English vocabulary. Cannot frame grammatically correct sentences for general conversation. Answers in phrases with prompts for factual and inferential questions from curriculum lessons. Can frame sentences with 3-4 words for familiar keywords. Can narrate 2 sentences with prompts and help on a given topic and picture. Can name classifications (animals/birds/fruits/vehicles etc.).",
                 "goals": "Student E will improve grammatical accuracy in sentence construction and general conversation. Student E will consistently follow multi-step instructions without frequent reminders. Student E will improve the ability to answer questions from curriculum lessons in complete sentences independently.",
                 "recommendations": "Focus on structured grammar exercises, practice following multi-step instructions, and encourage verbal expression in complete sentences."
             },
             "reading_familiar": {
-                "current_grade": "Grade 4",
+                "current_grade": "Grade X",  # X from assessment
                 "present_level": "Able to read Grade 4 level text with 90% accuracy.",
                 "goals": "Student E will maintain 90% accuracy in reading Grade 4 level familiar texts.",
                 "recommendations": "Continue providing Grade 4 level familiar texts for practice to maintain current reading proficiency."
             },
             "reading_unfamiliar": {
-                "current_grade": "Grade 2",
+                "current_grade": "Grade Y",  # Y from assessment if different
                 "present_level": "Shows difficulty reading multisyllabic words. Can do sound-letter association for most consonants (80% accuracy). Can identify initial/final sounds of words (80% accuracy). Can identify short vowel sounds (80% accuracy). Can read CVC words, sight words (90% accuracy till List 6, 50% accuracy for 7-11), and words from classification. Can read teacher-made passages with CVC words, sight words, and classification words. Can read initial and final blends with 50% accuracy. Reads keywords from lessons with 50% accuracy and sentences with keywords with 80% accuracy, both with practice. Can read at an independent level. Can read and understand instructions in worksheets but needs reminders to focus. Lacks word attack skills like syllabication and context clues.",
                 "goals": "Student E will improve reading accuracy for multisyllabic words. Student E will develop word attack skills, including syllabication and using context clues. Student E will improve reading accuracy for sight words List 7-11 to 90%.",
                 "recommendations": "Provide targeted instruction and practice on decoding multisyllabic words, explicitly teach syllabication and context clues, and continue practicing sight words."
@@ -99,12 +115,14 @@ def convert_plop_to_standard_format(plop_response: 'PLOPIEPResponse') -> dict:
         plop_data = plop_response
     
     # Create a standard format response
+    # Extract student_info from PLOP data
+    student_info_data = plop_data.get('student_info', {})
     standard_response = {
         "student_info": {
-            "name": "Student",  # This will be replaced by service layer
-            "dob": "2015-01-01",  # This will be replaced by service layer
-            "class": "Grade 4",
-            "date_of_iep": "2025-01-21"
+            "name": student_info_data.get('name', 'Student'),
+            "dob": student_info_data.get('dob', '2015-01-01'),
+            "class": student_info_data.get('class', 'Grade TBD'),  # Now comes from actual PLOP response
+            "date_of_iep": student_info_data.get('date_of_iep', '2025-01-21')
         },
         "long_term_goal": "Student will demonstrate improvement across all academic domains including oral language, reading, writing, spelling, and mathematics as measured by curriculum-based assessments and standardized evaluations.",
         "short_term_goals": "By June 2025, student will improve performance in identified areas of need as outlined in the domain-specific goals below. Student will achieve 80% accuracy on grade-level tasks across academic domains with appropriate supports and accommodations.",

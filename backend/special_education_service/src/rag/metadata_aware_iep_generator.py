@@ -360,12 +360,24 @@ class MetadataAwareIEPGenerator:
             # Parse JSON response - use appropriate schema based on template
             response_data = json.loads(raw_response)
             
-            # 🔧 DEFENSIVE FIX: Truncate evidence_based_improvements if too many are generated
+            # 🔧 DEFENSIVE FIX: Truncate grounding metadata fields if too many/too long are generated
             if 'grounding_metadata' in response_data and response_data['grounding_metadata']:
                 grounding = response_data['grounding_metadata']
+                
+                # Fix evidence_based_improvements limit (max 20)
                 if 'evidence_based_improvements' in grounding and len(grounding['evidence_based_improvements']) > 20:
                     logger.warning(f"⚠️ Truncating evidence_based_improvements from {len(grounding['evidence_based_improvements'])} to 20 items")
                     grounding['evidence_based_improvements'] = grounding['evidence_based_improvements'][:20]
+                
+                # Fix search_queries_performed limit (max 20)
+                if 'search_queries_performed' in grounding and len(grounding['search_queries_performed']) > 20:
+                    logger.warning(f"⚠️ Truncating search_queries_performed from {len(grounding['search_queries_performed'])} to 20 items")
+                    grounding['search_queries_performed'] = grounding['search_queries_performed'][:20]
+                
+                # Fix current_research_applied length (max 1000 characters)
+                if 'current_research_applied' in grounding and len(str(grounding['current_research_applied'])) > 1000:
+                    logger.warning(f"⚠️ Truncating current_research_applied from {len(str(grounding['current_research_applied']))} to 1000 characters")
+                    grounding['current_research_applied'] = str(grounding['current_research_applied'])[:1000]
             
             # Check if this is a PLOP template
             is_plop_template = template_data.get('name', '').startswith('PLOP and Goals')
@@ -383,11 +395,23 @@ class MetadataAwareIEPGenerator:
                 iep_response = GeminiIEPResponse(**response_data)
                 logger.info("📋 Using standard IEP schema for validation")
             
-            # 🌐 CRITICAL FIX: Extract grounding metadata from generation result
+            # 🌐 CRITICAL FIX: Extract grounding metadata from the appropriate source
             grounding_metadata = None
-            if 'grounding_metadata' in generation_result and generation_result['grounding_metadata']:
+            
+            # For PLOP templates, grounding metadata is preserved in the converted standard_data
+            if is_plop_template and 'grounding_metadata' in standard_data:
+                grounding_metadata = standard_data['grounding_metadata']
+                logger.info(f"🎯 PLOP: Grounding metadata found in converted data: {grounding_metadata}")
+            # For standard templates, check the response_data
+            elif 'grounding_metadata' in response_data:
+                grounding_metadata = response_data['grounding_metadata']
+                logger.info(f"📋 Standard: Grounding metadata found in response data: {grounding_metadata}")
+            # Fallback: check generation_result (for backward compatibility)
+            elif 'grounding_metadata' in generation_result and generation_result['grounding_metadata']:
                 grounding_metadata = generation_result['grounding_metadata']
-                logger.info(f"🌐 Grounding metadata found in generation result: {len(grounding_metadata.get('web_search_queries', []))} queries")
+                logger.info(f"🔄 Fallback: Grounding metadata found in generation result")
+            else:
+                logger.warning("⚠️ No grounding metadata found in any expected location")
             
             logger.info("✅ IEP content generated successfully with evidence integration")
             
