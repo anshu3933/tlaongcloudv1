@@ -73,11 +73,15 @@ class GeminiClient:
         
         # New GenAI client for grounding support
         try:
+            from google import genai as new_genai
+            from google.genai import types as new_genai_types
             self.new_genai_client = new_genai.Client()
+            self.new_genai_types = new_genai_types
             logger.info("🔧 New GenAI client initialized for Google Search grounding")
         except Exception as e:
             logger.warning(f"⚠️ Could not initialize new GenAI client: {e}")
             self.new_genai_client = None
+            self.new_genai_types = None
         
         # Response size limits - INCREASED for comprehensive IEP content
         self.max_response_size = 500000  # 500KB uncompressed (increased from 100KB)
@@ -131,18 +135,17 @@ class GeminiClient:
                 if enable_google_search_grounding and self.new_genai_client:
                     logger.info("🌐 Using new GenAI client for Google Search grounding")
                     
-                    # Use the new GenAI API for proper grounding
-                    grounding_tool = types.Tool(
-                        google_search=types.GoogleSearch()
+                    # Use the correct new GenAI API for grounding
+                    grounding_tool = self.new_genai_types.Tool(
+                        google_search=self.new_genai_types.GoogleSearch()
                     )
                     
-                    config = types.GenerateContentConfig(
+                    config = self.new_genai_types.GenerateContentConfig(
                         tools=[grounding_tool],
-                        temperature=0.8,  # INCREASED from 0.7 to 0.8 for more creative grounding
+                        temperature=0.8,
                         top_p=0.95,
                         top_k=40,
                         max_output_tokens=32768
-                        # Note: response_mime_type="application/json" is not supported with tools
                     )
                     
                     def generate_with_grounding():
@@ -153,6 +156,7 @@ class GeminiClient:
                         )
                     
                     response = await loop.run_in_executor(None, generate_with_grounding)
+                    
                     
                 elif enable_google_search_grounding:
                     logger.warning("⚠️ Google Search grounding requested but new GenAI client not available, falling back to standard generation")
@@ -170,6 +174,7 @@ class GeminiClient:
                         self.model.generate_content,
                         prompt
                     )
+                    grounding_metadata = None
                 
                 # Extract text and clean it
                 raw_text = response.text
@@ -446,14 +451,19 @@ When Google Search grounding is enabled, you MUST:
        {{
          "section": "section_name",
          "improvement": "description of how current research influenced this content",
-         "source_type": "research study/best practice/current standard/legal requirement"
+         "source_type": "research study"  // REQUIRED: Must be one of: "research study", "best practice", "current standard", or "legal requirement"
        }}
      ],
 ⚠️ CRITICAL LIMITS FOR SCHEMA COMPLIANCE:
-   - evidence_based_improvements: MAXIMUM 15 items
+   - evidence_based_improvements: MAXIMUM 15 items (each MUST have "section", "improvement", AND "source_type" fields)
    - search_queries_performed: MAXIMUM 15 items  
    - current_research_applied: MAXIMUM 800 characters
      "current_research_applied": "brief summary of how current research enhanced the IEP recommendations (MAX 800 chars)"
+   
+   🚨 REQUIRED FIELDS IN EACH evidence_based_improvements ITEM:
+   - "section": section name (e.g., "reading_familiar", "math", "oral_language")
+   - "improvement": description of improvement made based on research
+   - "source_type": MUST be one of: "research study", "best practice", "current standard", "legal requirement"
    }}
 
 2. In your content generation, incorporate and acknowledge current research findings
@@ -484,6 +494,7 @@ This is a PLOP template that generates COMPREHENSIVE, DETAILED content for each 
 3. Include precise performance metrics and educational terminology
 4. Reference specific grade levels, curriculum standards, and intervention strategies
 5. Create individualized content that reflects the unique student profile
+6. 🆕 PRIORITIZE ENHANCED GOALS BY SUBJECT: Use the "ENHANCED EDUCATIONAL GOALS BY SUBJECT" data from Document AI to derive goals for each PLOP section
 
 REQUIRED STRUCTURE for each section:
 {{
@@ -509,11 +520,24 @@ CONTENT QUALITY REQUIREMENTS:
 - Reference specific curriculum, teaching methods, and educational frameworks
 - Include performance metrics (percentages, time measures, accuracy rates)
 
+🆕 ENHANCED GOALS & GRADE INTEGRATION FOR PLOP:
+When enhanced_goals_by_subject data is available, you MUST:
+1. 📊 USE EXTRACTED GRADE LEVELS: Use "EXTRACTED GRADE LEVELS FROM ASSESSMENT" for all current_grade fields in PLOP sections
+   - If subject-specific grades available (e.g., Reading: Grade 3, Math: Grade 2), use those exact grades for respective sections
+   - If only overall grade available, use that for all sections requiring current_grade
+   - If no grades extracted, use "Grade TBD" and note in present_level that grade level needs assessment
+2. Map extracted goals to appropriate PLOP sections (oral_language, reading_familiar, reading_unfamiliar, etc.)
+3. Transform extracted goal text into formal PLOP goals format with specific criteria
+4. Use extracted performance indicators as basis for present_level descriptions
+5. Incorporate subject-specific recommendations from Document AI into PLOP recommendations fields
+6. Reference specific assessment text that supports each goal when available
+7. Maintain the comprehensive, detailed format while using actual assessment-derived content
+
 EXAMPLE HIGH-QUALITY OUTPUT (grades from assessment):
 {{
   "oral_language": {{
     "current_grade": "Grade X",  # X = actual grade from assessment
-    "present_level": "{student_data.get('student_name', 'Student')} demonstrates mixed performance in oral language skills. Receptively, {student_data.get('student_name', 'Student')} can understand and follow 1-2 step directions with 85% accuracy in structured settings, but requires visual cues and repetition for multi-step instructions (3+ steps), achieving only 60% accuracy. Vocabulary knowledge is at approximately 3rd grade level based on curriculum assessments, with strong performance in concrete nouns and action verbs but significant difficulty with abstract concepts, temporal concepts, and inferential language. Expressively, {student_data.get('student_name', 'Student')} uses primarily simple sentence structures with occasional compound sentences, demonstrating grammatical errors in verb tense consistency (40% error rate), subject-verb agreement (30% error rate), and pronoun usage (25% error rate) during informal conversation samples...",
+    "present_level": "{student_data.get('student_name', 'Student')} demonstrates mixed performance in oral language skills. Receptively, {student_data.get('student_name', 'Student')} can understand and follow 1-2 step directions with 85% accuracy in structured settings, but requires visual cues and repetition for multi-step instructions (3+ steps), achieving only 60% accuracy. Vocabulary knowledge is below grade-level expectations based on curriculum assessments, with strong performance in concrete nouns and action verbs but significant difficulty with abstract concepts, temporal concepts, and inferential language. Expressively, {student_data.get('student_name', 'Student')} uses primarily simple sentence structures with occasional compound sentences, demonstrating grammatical errors in verb tense consistency (40% error rate), subject-verb agreement (30% error rate), and pronoun usage (25% error rate) during informal conversation samples...",
     "goals": "By [specific date], {student_data.get('student_name', 'Student')} will independently follow 3-step oral directions in academic settings with 80% accuracy across 5 consecutive data collection sessions. {student_data.get('student_name', 'Student')} will use grammatically correct sentences (including proper verb tense and subject-verb agreement) in 90% of observed utterances during structured academic discussions over 3 consecutive weeks. {student_data.get('student_name', 'Student')} will demonstrate comprehension of grade-level vocabulary by accurately defining and using 15 new abstract vocabulary words per month with 75% accuracy in multiple contexts...",
     "recommendations": "Implement explicit vocabulary instruction using semantic mapping and visual supports. Provide systematic grammar instruction focusing on verb tense consistency through structured practice activities 3x weekly. Use visual direction cards and checklist strategies to support multi-step direction following. Incorporate oral language practice through structured peer discussions and presentation opportunities. Utilize graphic organizers for expressive language tasks and provide sentence starters for complex responses. Implement daily 10-minute vocabulary review sessions using researched-based techniques such as..."
   }}
@@ -594,9 +618,15 @@ DOCUMENT AI DATA TRANSFORMATION REQUIREMENTS:
 
 🎯 EXTRACTED STUDENT PROFILE FROM ASSESSMENT DATA:
 Name: {student_data.get('student_name', 'Student')}
-Grade: {student_data.get('grade_level', 'Not specified')}
+Date of Birth: {student_data.get('date_of_birth', 'To be provided')}
+Grade: TO BE DETERMINED FROM ASSESSMENT DATA ONLY (no default grade level provided)
 Disability: {student_data.get('disability_type', 'Not specified')}
 Case Manager: {student_data.get('case_manager_name', 'Not specified')}
+
+⚠️ CRITICAL DATE FORMATTING:
+- For date_of_birth (dob): Use the ACTUAL date provided above (e.g., "2015-03-15"), NOT the format pattern
+- If no date is provided, use "To be provided" exactly as shown
+- For date_of_iep: Use today's actual date in YYYY-MM-DD format (e.g., "2025-01-21")
 
 🚨 CRITICAL GRADE-LEVEL CONSTRAINTS - MUST READ 🚨
 1. The student's grade level(s) come EXCLUSIVELY from the assessment data provided above
@@ -773,6 +803,104 @@ Output ONLY the JSON object following the exact schema and format shown in the e
                 elif isinstance(rec, dict) and rec.get('text'):
                     formatted_sections.append(f"  • {rec['text'][:250]}...")
         
+        # Format extracted grade levels (NEW - Grade extraction from assessment)
+        enhanced_goals_data = student_data.get('enhanced_goals_by_subject', {})
+        if enhanced_goals_data and enhanced_goals_data.get('grade_levels_extracted'):
+            grade_data = enhanced_goals_data['grade_levels_extracted']
+            formatted_sections.append("\n📊 EXTRACTED GRADE LEVELS FROM ASSESSMENT (Use for PLOP current_grade fields):")
+            
+            # Overall grade
+            if grade_data.get('overall_grade'):
+                formatted_sections.append(f"  🎯 Overall Performance Level: Grade {grade_data['overall_grade']}")
+            
+            # Subject-specific grades
+            subject_grades = grade_data.get('subject_specific_grades', {})
+            if subject_grades:
+                formatted_sections.append(f"  📚 Subject-Specific Grade Levels:")
+                for subject, grade_list in subject_grades.items():
+                    if grade_list:
+                        grades = [g['grade'] for g in grade_list]
+                        unique_grades = list(set(grades))
+                        formatted_sections.append(f"    • {subject.title()}: Grade {', Grade '.join(unique_grades)}")
+            
+            # Grade equivalents
+            grade_equivalents = grade_data.get('grade_equivalents', [])
+            if grade_equivalents:
+                formatted_sections.append(f"  📈 Grade Equivalents:")
+                for equiv in grade_equivalents[:3]:
+                    formatted_sections.append(f"    • {equiv['context']}")
+            
+            # Confidence
+            confidence = grade_data.get('extraction_confidence', 0)
+            formatted_sections.append(f"  🔍 Grade Extraction Confidence: {confidence:.1%}")
+        
+        # 🆕 SIMPLE GRADE EXTRACTION from assessment summary (for direct content)
+        # Debug: Check what fields are available
+        available_fields = list(student_data.keys())
+        formatted_sections.append(f"\n🔍 DEBUG: Available student_data fields: {available_fields}")
+        
+        assessment_summary = student_data.get('assessment_summary', '') or student_data.get('current_achievement', '')
+        formatted_sections.append(f"🔍 DEBUG: Assessment summary: '{assessment_summary[:100] if assessment_summary else 'None found'}...'")
+        
+        if assessment_summary and not enhanced_goals_data.get('grade_levels_extracted'):
+            # Simple grade extraction for assessment summaries provided directly
+            simple_grades = self._extract_simple_grades_from_text(assessment_summary)
+            if simple_grades:
+                formatted_sections.append("\n📊 EXTRACTED GRADE LEVELS FROM ASSESSMENT SUMMARY:")
+                for subject, grade in simple_grades.items():
+                    formatted_sections.append(f"  • {subject.title()}: Grade {grade}")
+                formatted_sections.append("  🔍 Use these grades for appropriate PLOP current_grade fields")
+            else:
+                # Debug: show what assessment summary was found
+                formatted_sections.append(f"\n⚠️ DEBUG: Assessment summary found but no grades extracted from: '{assessment_summary[:100]}...'")
+        
+        # Format enhanced goals by subject (NEW - Document AI enhancement)  
+        if enhanced_goals_data and enhanced_goals_data.get('goals_by_subject'):
+            formatted_sections.append("\n🎯 ENHANCED EDUCATIONAL GOALS BY SUBJECT (Use for PLOP Goals):")
+            goals_by_subject = enhanced_goals_data['goals_by_subject']
+            total_subjects = enhanced_goals_data.get('total_subjects_with_goals', 0)
+            formatted_sections.append(f"📊 Total subjects with extracted goals: {total_subjects}")
+            
+            for subject_key, subject_data in goals_by_subject.items():
+                if isinstance(subject_data, dict):
+                    subject_name = subject_data.get('subject_name', subject_key.title())
+                    total_items = subject_data.get('total_items', 0)
+                    formatted_sections.append(f"  • {subject_name}: {total_items} items extracted")
+                    
+                    # Format goals from text
+                    goals_from_text = subject_data.get('goals_from_text', [])
+                    if goals_from_text:
+                        formatted_sections.append(f"    🎯 Goals ({len(goals_from_text)}):")
+                        for goal in goals_from_text[:2]:  # Limit to prevent overflow
+                            if isinstance(goal, dict) and goal.get('text'):
+                                formatted_sections.append(f"      - {goal['text'][:150]}...")
+                    
+                    # Format recommendations
+                    recommendations = subject_data.get('recommendations', [])
+                    if recommendations:
+                        formatted_sections.append(f"    💡 Recommendations ({len(recommendations)}):")
+                        for rec in recommendations[:2]:  # Limit to prevent overflow
+                            if isinstance(rec, dict) and rec.get('text'):
+                                formatted_sections.append(f"      - {rec['text'][:150]}...")
+                    
+                    # Format performance indicators
+                    performance_indicators = subject_data.get('performance_indicators', [])
+                    if performance_indicators:
+                        formatted_sections.append(f"    📊 Performance ({len(performance_indicators)}):")
+                        for perf in performance_indicators[:2]:  # Limit to prevent overflow
+                            if isinstance(perf, dict) and perf.get('text'):
+                                formatted_sections.append(f"      - {perf['text'][:150]}...")
+            
+            # Format general goals if available
+            general_goals = enhanced_goals_data.get('general_goals', [])
+            if general_goals:
+                formatted_sections.append(f"  📝 General Goals ({len(general_goals)}):")
+                for goal in general_goals[:3]:  # Limit to prevent overflow
+                    if isinstance(goal, dict) and goal.get('text'):
+                        formatted_sections.append(f"    - {goal['text'][:150]}...")
+        elif enhanced_goals_data:
+            formatted_sections.append(f"\n⚠️ Enhanced goals data present but no goals_by_subject found: {list(enhanced_goals_data.keys())}")
+        
         # Enhanced instruction for Document AI data transformation
         formatted_sections.append("""
 🚨 DOCUMENT AI DATA TRANSFORMATION INSTRUCTIONS:
@@ -802,7 +930,49 @@ Output ONLY the JSON object following the exact schema and format shown in the e
    - Transform recommendations into specific IEP language and implementation details
 
 CRITICAL: This Document AI extracted data represents actual student assessment results. 
-All IEP content must be directly tied to and reference this specific assessment data.""")
+All IEP content must be directly tied to and reference this specific assessment data.
+
+🆕 ENHANCED GOALS BY SUBJECT UTILIZATION:
+If "ENHANCED EDUCATIONAL GOALS BY SUBJECT" data is provided above, you MUST prioritize using this subject-specific goal extraction to inform your IEP content generation. This data represents sophisticated Document AI parsing of educational objectives organized by academic domain, and should be the PRIMARY source for goal development in all relevant IEP sections.""")
         
         return "\n".join(formatted_sections)
+    
+
+    def _extract_simple_grades_from_text(self, text: str) -> Dict[str, str]:
+        """
+        Simple grade extraction from assessment summary text.
+        Used when assessment data is provided directly instead of through Document AI.
+        """
+        import re
+        
+        if not text:
+            return {}
+        
+        grades = {}
+        
+        # Simple grade patterns for assessment summaries
+        patterns = [
+            # Subject-specific patterns
+            (r"(?:Grade|grade)\s+([0-9K])\s+reading", "reading"),
+            (r"reading\s+(?:at\s+)?(?:Grade|grade)\s+([0-9K])", "reading"),
+            (r"(?:Grade|grade)\s+([0-9K])\s+math", "math"),
+            (r"math\s+(?:at\s+)?(?:Grade|grade)\s+([0-9K])", "math"),
+            (r"(?:Grade|grade)\s+([0-9K])\s+writing", "writing"),
+            (r"writing\s+(?:at\s+)?(?:Grade|grade)\s+([0-9K])", "writing"),
+            
+            # General patterns
+            (r"(?:performing|functioning)\s+at\s+(?:Grade|grade)\s+([0-9K])", "overall"),
+            (r"(?:demonstrates|shows)\s+(?:Grade|grade)\s+([0-9K])\s+(?:level|performance)", "overall"),
+        ]
+        
+        for pattern, subject in patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                grade_num = match.group(1).strip()
+                if grade_num.upper() == 'K':
+                    grades[subject] = 'K'
+                elif grade_num.isdigit():
+                    grades[subject] = grade_num
+        
+        return grades
 

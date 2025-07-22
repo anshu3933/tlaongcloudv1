@@ -150,23 +150,40 @@ class DocumentAIService:
         # Look for assessment scores in text and tables
         scores = await self._extract_scores_from_content(document.text, tables_data)
         
-        # Extract educational objectives and performance levels from narrative content
-        educational_data = await self._extract_educational_content(document.text, document_id)
+        # 🆕 UNIFIED ENHANCED GOAL EXTRACTION (replaces old educational_content method)
+        enhanced_goals = await self._extract_educational_goals_by_subject(document.text, document_id)
+        
+        # Extract legacy format for backward compatibility
+        legacy_educational_data = await self._extract_legacy_educational_content(document.text, document_id)
         
         extracted_data.update({
             "entities": entities,
             "tables": tables_data,
             "extracted_scores": scores,
-            "educational_objectives": educational_data.get("objectives", []),
-            "performance_levels": educational_data.get("performance_levels", {}),
-            "recommendations": educational_data.get("recommendations", []),
+            # Legacy fields for backward compatibility
+            "educational_objectives": legacy_educational_data.get("objectives", []),
+            "performance_levels": legacy_educational_data.get("performance_levels", {}),
+            "recommendations": legacy_educational_data.get("recommendations", []),
+            "areas_of_concern": legacy_educational_data.get("areas_of_concern", []),
+            "strengths": legacy_educational_data.get("strengths", []),
+            # 🎯 PRIMARY ENHANCED EXTRACTION
+            "enhanced_goals_by_subject": enhanced_goals,
             "confidence": self._calculate_confidence(entities, scores)
         })
         
-        logger.info(f"📊 Extracted {len(scores)} scores from document {document_id}")
+        logger.info(f"📊 [SUMMARY] Extracted {len(scores)} scores from document {document_id}")
+        
+        # Log enhanced goals extraction results
+        if enhanced_goals and enhanced_goals.get("goals_by_subject"):
+            logger.info(f"🎯 [ENHANCED] Extracted goals for {len(enhanced_goals['goals_by_subject'])} subjects:")
+            for subject, data in enhanced_goals["goals_by_subject"].items():
+                logger.info(f"  📚 {subject}: {data['total_items']} items (goals: {len(data.get('goals_from_text', []))}, recs: {len(data.get('recommendations', []))}, perf: {len(data.get('performance_indicators', []))})")
+        else:
+            logger.warning(f"⚠️ [ENHANCED] No enhanced goals extracted from document {document_id}")
+        
         return extracted_data
     
-    async def _extract_educational_content(self, text: str, document_id: str) -> Dict[str, Any]:
+    async def _extract_legacy_educational_content(self, text: str, document_id: str) -> Dict[str, Any]:
         """
         Extract educational objectives, performance levels, and goals from narrative assessment reports
         """
@@ -329,6 +346,386 @@ class DocumentAIService:
         logger.info(f"📚 Educational content extracted: {len(objectives)} objectives, {len(educational_data['performance_levels'])} performance areas, {len(recommendations)} recommendations")
         
         return educational_data
+
+    async def _extract_educational_goals_by_subject(self, text: str, document_id: str) -> Dict[str, Any]:
+        """
+        Enhanced goal extraction organized by subject/skill areas from assessment report text.
+        Extracts specific educational goals and recommendations from the assessment narrative.
+        """
+        import re
+        
+        logger.info(f"🎯 [ENHANCED] Extracting educational goals by subject area from document {document_id}")
+        logger.info(f"📄 [ENHANCED] Document text length: {len(text)} characters")
+        
+        # 🆕 EXTRACT GRADE LEVELS FROM ASSESSMENT TEXT
+        grade_levels = await self._extract_grade_levels_from_text(text, document_id)
+        logger.info(f"📊 [ENHANCED] Extracted grade levels: {grade_levels}")
+        
+        # Define subject/skill areas with enhanced patterns
+        subject_areas = {
+            "oral_language": {
+                "name": "Oral Language – Receptive and Expressive",
+                "keywords": ["oral language", "receptive", "expressive", "vocabulary", "directions", "conversations", "speaking", "listening", "verbal"],
+                "patterns": [
+                    r"oral\s+language[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"(?:receptive|expressive)\s+language[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"vocabulary[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"following\s+directions[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            },
+            "reading_familiar": {
+                "name": "Reading – Familiar",
+                "keywords": ["reading", "familiar texts", "sight words", "fluency", "accuracy"],
+                "patterns": [
+                    r"reading\s+(?:familiar|known)[:\s]*([^.]*?(?:goal|objective|target|improve|maintain|accuracy)[^.]*\.)",
+                    r"sight\s+words[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"fluency[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"familiar\s+text[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            },
+            "reading_unfamiliar": {
+                "name": "Reading – Unfamiliar",
+                "keywords": ["decoding", "unfamiliar", "word attack", "phonics", "syllables"],
+                "patterns": [
+                    r"decoding[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"(?:unfamiliar|unknown)\s+(?:words?|text)[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"word\s+attack[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"phonics[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"syllabication[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            },
+            "reading_comprehension": {
+                "name": "Reading Comprehension",
+                "keywords": ["comprehension", "understanding", "questions", "inference", "main idea"],
+                "patterns": [
+                    r"(?:reading\s+)?comprehension[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"understanding[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"(?:answering|responding\s+to)\s+questions[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"inference[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            },
+            "spelling": {
+                "name": "Spelling",
+                "keywords": ["spelling", "orthography", "written words", "spelling patterns"],
+                "patterns": [
+                    r"spelling[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"(?:correct\s+)?spelling\s+of[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"spelling\s+(?:accuracy|patterns)[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            },
+            "writing": {
+                "name": "Writing",
+                "keywords": ["writing", "written expression", "composition", "sentences", "paragraphs"],
+                "patterns": [
+                    r"writing[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"written\s+expression[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"(?:sentence|paragraph)\s+(?:structure|writing)[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"composition[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            },
+            "handwriting": {
+                "name": "Handwriting",
+                "keywords": ["handwriting", "legibility", "letter formation", "spacing"],
+                "patterns": [
+                    r"handwriting[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"legibility[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"letter\s+formation[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"(?:word|letter)\s+spacing[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            },
+            "grammar": {
+                "name": "Grammar",
+                "keywords": ["grammar", "syntax", "verb tense", "sentence structure", "parts of speech"],
+                "patterns": [
+                    r"grammar[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"(?:verb\s+)?tense[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"sentence\s+structure[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"(?:parts\s+of\s+speech|syntax)[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            },
+            "concept": {
+                "name": "Concept Development",
+                "keywords": ["concepts", "vocabulary", "abstract thinking", "categorization"],
+                "patterns": [
+                    r"concept[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"abstract\s+thinking[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"(?:academic\s+)?vocabulary[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"categorization[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            },
+            "math": {
+                "name": "Mathematics",
+                "keywords": ["math", "mathematics", "computation", "problem solving", "number sense"],
+                "patterns": [
+                    r"math(?:ematics)?[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"computation[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"problem\s+solving[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"number\s+sense[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            },
+            "behaviour": {
+                "name": "Behaviour",
+                "keywords": ["behavior", "attention", "focus", "self-regulation", "social skills"],
+                "patterns": [
+                    r"behavio?r[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"attention[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"(?:self-regulation|self\s+regulation)[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)",
+                    r"social\s+skills[:\s]*([^.]*?(?:goal|objective|target|improve|develop)[^.]*\.)"
+                ]
+            }
+        }
+        
+        extracted_goals = {}
+        
+        # Extract goals for each subject area
+        for subject_key, subject_config in subject_areas.items():
+            subject_name = subject_config["name"]
+            patterns = subject_config["patterns"]
+            keywords = subject_config["keywords"]
+            
+            subject_goals = {
+                "goals_from_text": [],
+                "recommendations": [],
+                "performance_indicators": [],
+                "suggested_targets": []
+            }
+            
+            # Extract explicit goals using patterns
+            for pattern in patterns:
+                matches = re.finditer(pattern, text, re.IGNORECASE | re.DOTALL)
+                for match in matches:
+                    goal_text = match.group(1).strip()
+                    if goal_text and len(goal_text) > 20:  # Filter out very short matches
+                        subject_goals["goals_from_text"].append({
+                            "text": goal_text,
+                            "source": "direct_extraction",
+                            "confidence": 0.8
+                        })
+            
+            # Extract contextual recommendations for this subject
+            for keyword in keywords:
+                # Look for recommendations related to this subject
+                rec_pattern = rf"{keyword}[^.]*?(?:recommend|suggest|should|need|require)[^.]*?\."
+                matches = re.finditer(rec_pattern, text, re.IGNORECASE)
+                for match in matches:
+                    rec_text = match.group(0).strip()
+                    if rec_text and len(rec_text) > 25:
+                        subject_goals["recommendations"].append({
+                            "text": rec_text,
+                            "source": "contextual_extraction",
+                            "confidence": 0.7
+                        })
+            
+            # Extract performance indicators
+            for keyword in keywords:
+                perf_pattern = rf"{keyword}[^.]*?(?:level|grade|score|percentage|accuracy)[^.]*?\."
+                matches = re.finditer(perf_pattern, text, re.IGNORECASE)
+                for match in matches:
+                    perf_text = match.group(0).strip()
+                    if perf_text and len(perf_text) > 15:
+                        subject_goals["performance_indicators"].append({
+                            "text": perf_text,
+                            "source": "performance_extraction",
+                            "confidence": 0.9
+                        })
+            
+            # Only include subjects that have extracted content
+            if (subject_goals["goals_from_text"] or 
+                subject_goals["recommendations"] or 
+                subject_goals["performance_indicators"]):
+                extracted_goals[subject_key] = {
+                    "subject_name": subject_name,
+                    "total_items": len(subject_goals["goals_from_text"]) + len(subject_goals["recommendations"]) + len(subject_goals["performance_indicators"]),
+                    **subject_goals
+                }
+        
+        # Extract general goal patterns that might not be subject-specific
+        general_goal_patterns = [
+            r"(?:Student\s+will|[Ss]he\s+will|[Hh]e\s+will)\s+([^.]*?(?:by|within|during)[^.]*\.)",
+            r"(?:Goal|Objective|Target)[:\s]*([^.]*?\.)",
+            r"(?:improve|increase|develop|enhance|strengthen)\s+([^.]*?\.)"
+        ]
+        
+        general_goals = []
+        for pattern in general_goal_patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                goal_text = match.group(1).strip() if match.groups() else match.group(0).strip()
+                if goal_text and len(goal_text) > 30:
+                    general_goals.append({
+                        "text": goal_text,
+                        "source": "general_extraction",
+                        "confidence": 0.6
+                    })
+        
+        result = {
+            "goals_by_subject": extracted_goals,
+            "general_goals": general_goals[:10],  # Limit to 10 general goals
+            "grade_levels_extracted": grade_levels,  # 🆕 Grade levels from assessment text
+            "total_subjects_with_goals": len(extracted_goals),
+            "extraction_summary": {
+                subject: data["total_items"] for subject, data in extracted_goals.items()
+            }
+        }
+        
+        logger.info(f"🎯 Enhanced goal extraction completed: {len(extracted_goals)} subjects with goals, {len(general_goals)} general goals")
+        for subject, count in result["extraction_summary"].items():
+            logger.info(f"  📚 {subject}: {count} items extracted")
+        
+        return result
+    
+    async def _extract_grade_levels_from_text(self, text: str, document_id: str) -> Dict[str, Any]:
+        """
+        Extract grade level information from assessment text.
+        Identifies specific grade levels mentioned for different academic domains.
+        """
+        import re
+        
+        logger.info(f"📊 [GRADE-EXTRACTION] Starting grade level extraction for document {document_id}")
+        
+        # Grade level extraction patterns
+        grade_patterns = {
+            # Explicit grade level statements
+            "explicit_grades": [
+                r"(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)\s+(?:level|performance|skills?|abilities?)",
+                r"(?:performing|reading|math|writing)\s+at\s+(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)",
+                r"(?:demonstrates|shows|exhibits)\s+(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)\s+(?:level|skills?)",
+                r"(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)\s+(?:reading|math|writing|language|comprehension)",
+            ],
+            
+            # Subject-specific grade levels
+            "reading_grades": [
+                r"reading\s+(?:at\s+)?(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)",
+                r"(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)\s+reading",
+                r"reading\s+(?:level|performance|skills?)\s+(?:at\s+)?(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)",
+            ],
+            
+            "math_grades": [
+                r"math(?:ematics)?\s+(?:at\s+)?(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)",
+                r"(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)\s+math(?:ematics)?",
+                r"computation\s+(?:at\s+)?(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)",
+            ],
+            
+            "writing_grades": [
+                r"writing\s+(?:at\s+)?(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)",
+                r"(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)\s+writing",
+                r"written\s+expression\s+(?:at\s+)?(?:Grade|grade)\s+([0-9K](?:\.[0-9])?)",
+            ],
+            
+            # Grade equivalent patterns
+            "grade_equivalents": [
+                r"grade\s+equivalent(?:s)?[:\s]+([0-9K](?:\.[0-9])?)",
+                r"GE[:\s]+([0-9K](?:\.[0-9])?)",
+                r"(?:performs|functioning)\s+at\s+(?:a\s+)?([0-9K](?:\.[0-9])?)\s+grade\s+level",
+            ],
+            
+            # Ordinal grade patterns  
+            "ordinal_grades": [
+                r"([0-9](?:st|nd|rd|th))\s+grade\s+(?:level|performance|skills?)",
+                r"(?:at\s+)?([0-9](?:st|nd|rd|th))\s+grade\s+(?:in\s+)?(?:reading|math|writing|language)",
+                r"kindergarten|([Kk])\s+(?:level|grade)",
+            ]
+        }
+        
+        extracted_grades = {
+            "overall_grade": None,
+            "subject_specific_grades": {},
+            "grade_equivalents": [],
+            "all_mentioned_grades": [],
+            "extraction_confidence": 0.0
+        }
+        
+        total_matches = 0
+        
+        # Extract grades for each pattern category
+        for category, patterns in grade_patterns.items():
+            category_matches = []
+            
+            for pattern in patterns:
+                matches = re.finditer(pattern, text, re.IGNORECASE)
+                for match in matches:
+                    grade_text = match.group(1).strip()
+                    
+                    # Normalize grade format
+                    normalized_grade = self._normalize_grade_format(grade_text)
+                    if normalized_grade:
+                        category_matches.append({
+                            "grade": normalized_grade,
+                            "raw_text": grade_text,
+                            "context": match.group(0),
+                            "source": category,
+                            "confidence": 0.8 if "explicit" in category else 0.7
+                        })
+                        total_matches += 1
+            
+            # Store category results
+            if category_matches:
+                logger.info(f"  📊 {category}: {len(category_matches)} grade references found")
+                
+                # Map to subject-specific grades
+                if "reading" in category:
+                    extracted_grades["subject_specific_grades"]["reading"] = category_matches
+                elif "math" in category:
+                    extracted_grades["subject_specific_grades"]["math"] = category_matches  
+                elif "writing" in category:
+                    extracted_grades["subject_specific_grades"]["writing"] = category_matches
+                elif "equivalent" in category:
+                    extracted_grades["grade_equivalents"] = category_matches
+                else:
+                    # Add to all mentioned grades
+                    extracted_grades["all_mentioned_grades"].extend(category_matches)
+        
+        # Determine overall grade if not subject-specific
+        if extracted_grades["all_mentioned_grades"]:
+            # Use the most frequently mentioned grade
+            grade_counts = {}
+            for grade_info in extracted_grades["all_mentioned_grades"]:
+                grade = grade_info["grade"]
+                grade_counts[grade] = grade_counts.get(grade, 0) + 1
+            
+            most_common_grade = max(grade_counts.items(), key=lambda x: x[1])
+            extracted_grades["overall_grade"] = most_common_grade[0]
+        
+        # Calculate confidence based on number of matches
+        if total_matches > 0:
+            extracted_grades["extraction_confidence"] = min(0.6 + (total_matches * 0.1), 0.95)
+        
+        logger.info(f"📊 [GRADE-EXTRACTION] Completed: {total_matches} total grade references found")
+        logger.info(f"  🎯 Overall grade: {extracted_grades['overall_grade']}")
+        logger.info(f"  📚 Subject grades: {list(extracted_grades['subject_specific_grades'].keys())}")
+        logger.info(f"  🔍 Confidence: {extracted_grades['extraction_confidence']:.2f}")
+        
+        return extracted_grades
+    
+    def _normalize_grade_format(self, grade_text: str) -> str:
+        """Normalize grade text to consistent format"""
+        if not grade_text:
+            return None
+            
+        grade_text = grade_text.lower().strip()
+        
+        # Handle kindergarten
+        if grade_text in ['k', 'kindergarten', 'kinder']:
+            return "K"
+        
+        # Handle ordinal numbers (1st, 2nd, etc.)
+        if grade_text.endswith(('st', 'nd', 'rd', 'th')):
+            grade_num = grade_text[:-2]
+            if grade_num.isdigit():
+                return grade_num
+        
+        # Handle decimal grades (3.5, etc.)
+        try:
+            float(grade_text)
+            return grade_text
+        except ValueError:
+            pass
+        
+        # Handle simple numbers
+        if grade_text.isdigit():
+            return grade_text
+            
+        return None
     
     def _extract_table_data(self, table, document) -> Dict[str, Any]:
         """Extract data from a Document AI table"""

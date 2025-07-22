@@ -678,7 +678,7 @@ async def test_metadata_aware_generator():
     student_data = {
         'student_id': 'test_student_001',
         'student_name': 'John Doe',
-        'grade_level': 'Grade 5',
+        'grade_level': 'Grade TBD',  # Should come from assessment data
         'disability_type': 'Specific Learning Disability',
         'current_achievement': 'Reading below grade level, strong visual processing',
         'strengths': 'Visual learning, mathematics reasoning',

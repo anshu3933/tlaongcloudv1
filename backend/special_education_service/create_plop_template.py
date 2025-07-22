@@ -50,7 +50,7 @@ async def create_plop_template():
                     "recommendations": "Evidence-based recommendations for instruction"
                 },
                 "example_format": {
-                    "current_grade": "Grade 4",
+                    "current_grade": "Grade from assessment",
                     "present_level": "Has age-appropriate vocabulary and can speak in complete sentences. Commits grammatical mistakes during sentence construction. Can understand 2-step instructions, but follows one-step and task-based instructions with reminders...",
                     "goals": "Student will improve grammatical accuracy in sentence construction and general conversation. Student will consistently follow multi-step instructions without frequent reminders...",
                     "recommendations": "Focus on structured grammar exercises, practice following multi-step instructions, and encourage verbal expression in complete sentences."
@@ -66,10 +66,10 @@ async def create_plop_template():
                     "recommendations": "Evidence-based recommendations for instruction"
                 },
                 "example_format": {
-                    "current_grade": "Grade 4",
-                    "present_level": "Able to read Grade 4 level text with 90% accuracy.",
-                    "goals": "Student will maintain 90% accuracy in reading Grade 4 level familiar texts.",
-                    "recommendations": "Continue providing Grade 4 level familiar texts for practice to maintain current reading proficiency."
+                    "current_grade": "Grade from assessment",
+                    "present_level": "Able to read grade-level text with 90% accuracy.",
+                    "goals": "Student will maintain 90% accuracy in reading grade-level familiar texts.",
+                    "recommendations": "Continue providing grade-appropriate familiar texts for practice to maintain current reading proficiency."
                 }
             },
             "reading_unfamiliar": {
@@ -82,7 +82,7 @@ async def create_plop_template():
                     "recommendations": "Evidence-based recommendations for instruction"
                 },
                 "example_format": {
-                    "current_grade": "Grade 2",
+                    "current_grade": "Grade from assessment",
                     "present_level": "Shows difficulty reading multisyllabic words. Can do sound-letter association for most consonants (80% accuracy). Can identify initial/final sounds of words (80% accuracy)...",
                     "goals": "Student will improve reading accuracy for multisyllabic words. Student will develop word attack skills, including syllabication and using context clues...",
                     "recommendations": "Provide targeted instruction and practice on decoding multisyllabic words, explicitly teach syllabication and context clues, and continue practicing sight words."
@@ -98,7 +98,7 @@ async def create_plop_template():
                     "recommendations": "Evidence-based recommendations for instruction"
                 },
                 "example_format": {
-                    "current_grade": "Grade 4",
+                    "current_grade": "Grade from assessment",
                     "present_level": "Able to answer 100% factual questions and 50% inferential questions. Can answer factual questions in 1-2 sentences with help...",
                     "goals": "Student will increase accuracy in answering inferential questions to 80% independently. Student will improve the ability to answer knowledge-based, comprehension-based, and application-based questions with less prompting...",
                     "recommendations": "Focus on strategies for inferential thinking, provide opportunities for independent comprehension tasks, and encourage elaboration when expressing opinions."
@@ -114,7 +114,7 @@ async def create_plop_template():
                     "recommendations": "Evidence-based recommendations for instruction"
                 },
                 "example_format": {
-                    "current_grade": "Grade 3",
+                    "current_grade": "Grade from assessment",
                     "present_level": "Able to spell up to List 6 of Dolch sight words with 90% accuracy and lists 7 to 11 with 70% accuracy. Can spell CVC words with 80% accuracy...",
                     "goals": "Student will achieve 90% accuracy in spelling sight words from lists 7 to 11. Student will improve spelling accuracy for blends and keywords from curriculum lessons to 80%...",
                     "recommendations": "Provide targeted practice for sight words (lists 7-11), blends, and curriculum keywords. Incorporate regular spelling checks in written assignments."
@@ -130,7 +130,7 @@ async def create_plop_template():
                     "recommendations": "Evidence-based recommendations for instruction"
                 },
                 "example_format": {
-                    "current_grade": "Grade 3",
+                    "current_grade": "Grade from assessment",
                     "present_level": "Can write 3-4 sentences on a familiar topic but needs keywords/assistance for unfamiliar topics. Handwriting is illegible...",
                     "goals": "Student will improve handwriting legibility. Student will be able to write 3-4 sentences on unfamiliar topics with minimal assistance...",
                     "recommendations": "Implement specific handwriting practice, provide graphic organizers or sentence starters for unfamiliar topics, and reinforce punctuation rules through explicit instruction and practice."
@@ -174,7 +174,7 @@ async def create_plop_template():
                     "recommendations": "Evidence-based recommendations for instruction"
                 },
                 "example_format": {
-                    "current_grade": "Grade 3",
+                    "current_grade": "Grade from assessment",
                     "present_level": "Has general awareness of things around him but is unable to generalize learned concepts. Can recall 60% of keywords with practice...",
                     "goals": "Student will improve the ability to generalize learned concepts to new situations. Student will increase recall of keywords from curriculum lessons to 90% independently...",
                     "recommendations": "Provide opportunities for applying concepts in real-world scenarios. Use flashcards and repeated exposure for keyword recall. Encourage writing complete sentences for answers."
@@ -190,7 +190,7 @@ async def create_plop_template():
                     "recommendations": "Evidence-based recommendations for instruction"
                 },
                 "example_format": {
-                    "current_grade": "Grade 2",
+                    "current_grade": "Grade from assessment",
                     "present_level": "No awareness of ascending or descending order and place value. Can add and subtract 2-digit numbers without carryover/borrowing. Can read up to 3-digit numbers...",
                     "goals": "Student will develop an understanding of ascending/descending order and place value. Student will improve proficiency in addition and subtraction with carryover/borrowing for 2-digit numbers...",
                     "recommendations": "Provide explicit instruction on place value, ascending/descending order, and advanced addition/subtraction. Integrate word problem-solving strategies, including writing statements. Practice multiplication tables regularly. Use visual aids and prompts for time and calendar concepts."
@@ -212,59 +212,8 @@ async def create_plop_template():
             }
         }
         
-        # Default goals specific to this PLOP format
-        plop_goals = [
-            {
-                "domain": "Oral Language",
-                "goal_template": "Student will improve grammatical accuracy in sentence construction and follow multi-step instructions without frequent reminders as measured by [measurement]",
-                "measurement_suggestions": ["teacher observation", "language sampling", "structured tasks"]
-            },
-            {
-                "domain": "Reading - Familiar",
-                "goal_template": "Student will maintain or improve reading accuracy for familiar texts at grade level as measured by [measurement]",
-                "measurement_suggestions": ["oral reading fluency", "running records", "comprehension assessments"]
-            },
-            {
-                "domain": "Reading - Unfamiliar",
-                "goal_template": "Student will improve decoding skills and word attack strategies for unfamiliar texts as measured by [measurement]",
-                "measurement_suggestions": ["phonics assessments", "word reading tests", "syllabication tasks"]
-            },
-            {
-                "domain": "Reading Comprehension",
-                "goal_template": "Student will increase accuracy in answering inferential and higher-order thinking questions as measured by [measurement]",
-                "measurement_suggestions": ["comprehension assessments", "question response accuracy", "discussion participation"]
-            },
-            {
-                "domain": "Spelling",
-                "goal_template": "Student will improve spelling accuracy for sight words, blends, and curriculum vocabulary as measured by [measurement]",
-                "measurement_suggestions": ["spelling tests", "written work samples", "dictation tasks"]
-            },
-            {
-                "domain": "Writing",
-                "goal_template": "Student will improve handwriting legibility and written expression with proper punctuation as measured by [measurement]",
-                "measurement_suggestions": ["writing samples", "handwriting assessments", "teacher rubrics"]
-            },
-            {
-                "domain": "Grammar",
-                "goal_template": "Student will improve understanding and application of grammatical concepts including parts of speech and verb tenses as measured by [measurement]",
-                "measurement_suggestions": ["grammar assessments", "language usage in writing", "structured exercises"]
-            },
-            {
-                "domain": "Concept Development",
-                "goal_template": "Student will improve ability to generalize learned concepts and increase keyword recall as measured by [measurement]",
-                "measurement_suggestions": ["concept mapping", "transfer tasks", "vocabulary assessments"]
-            },
-            {
-                "domain": "Mathematics",
-                "goal_template": "Student will improve mathematical concepts including place value, operations, and problem-solving as measured by [measurement]",
-                "measurement_suggestions": ["math assessments", "problem-solving tasks", "computational fluency measures"]
-            },
-            {
-                "domain": "Behavior",
-                "goal_template": "Student will improve attention span, task completion, and organizational skills as measured by [measurement]",
-                "measurement_suggestions": ["behavior tracking sheets", "task completion data", "organizational checklists"]
-            }
-        ]
+        # NO DEFAULT GOALS - All goals must be derived from assessment report text and recommendations
+        plop_goals = []  # Goals will be generated from assessment data only
         
         # Create the new template
         new_template = IEPTemplate(

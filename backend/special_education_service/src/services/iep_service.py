@@ -193,7 +193,8 @@ class IEPService:
             "student_id": str(student_id),
             # Use database record for core student info (CRITICAL for validation)
             "disability_type": student_record.get("disability_codes", []),
-            "grade_level": student_record.get("grade_level", ""),
+            # 🚨 GRADE LEVEL REMOVED: Must come ONLY from assessment data per user requirements
+            # "grade_level": student_record.get("grade_level", ""),  # REMOVED - causes hardcoded grades
             "student_name": f"{student_record.get('first_name', '')} {student_record.get('last_name', '')}".strip(),
             "case_manager_name": content_data.get("case_manager_name", ""),
             "placement_setting": content_data.get("placement_setting", ""),
@@ -515,7 +516,22 @@ class IEPService:
                 logger.error(f"Failed to create audit log: {audit_error}")
         
         logger.info("Post-creation operations completed")
-        return iep
+        
+        # 🌐 CRITICAL FIX: Include grounding metadata in API response
+        # The generated iep_content contains grounding metadata, but it's stored in the database
+        # We need to return it separately so the frontend can access it
+        response = dict(iep)  # Create a copy of the IEP record
+        
+        # Extract grounding metadata from the generated content
+        if iep_content and isinstance(iep_content, dict):
+            grounding_metadata = iep_content.get('google_search_grounding')
+            if grounding_metadata:
+                response['grounding_metadata'] = grounding_metadata
+                logger.info(f"🌐 [BACKEND-SERVICE] Grounding metadata added to API response: {len(grounding_metadata.get('web_search_queries', []))} queries")
+            else:
+                logger.warning(f"⚠️ [BACKEND-SERVICE] No grounding metadata found in generated content")
+        
+        return response
     
     async def create_iep(
         self,

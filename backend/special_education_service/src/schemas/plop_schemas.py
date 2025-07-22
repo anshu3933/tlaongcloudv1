@@ -81,9 +81,9 @@ class PLOPIEPResponse(BaseModel):
             },
             "reading_familiar": {
                 "current_grade": "Grade X",  # X from assessment
-                "present_level": "Able to read Grade 4 level text with 90% accuracy.",
-                "goals": "Student E will maintain 90% accuracy in reading Grade 4 level familiar texts.",
-                "recommendations": "Continue providing Grade 4 level familiar texts for practice to maintain current reading proficiency."
+                "present_level": "Able to read grade-level text with 90% accuracy.",
+                "goals": "Student E will maintain 90% accuracy in reading grade-level familiar texts.",
+                "recommendations": "Continue providing grade-appropriate familiar texts for practice to maintain current reading proficiency."
             },
             "reading_unfamiliar": {
                 "current_grade": "Grade Y",  # Y from assessment if different
@@ -91,10 +91,50 @@ class PLOPIEPResponse(BaseModel):
                 "goals": "Student E will improve reading accuracy for multisyllabic words. Student E will develop word attack skills, including syllabication and using context clues. Student E will improve reading accuracy for sight words List 7-11 to 90%.",
                 "recommendations": "Provide targeted instruction and practice on decoding multisyllabic words, explicitly teach syllabication and context clues, and continue practicing sight words."
             },
+            "reading_comprehension": {
+                "current_grade": "Grade X",
+                "present_level": "Able to answer 100% factual questions and 50% inferential questions. Can answer factual questions in 1-2 sentences with help.",
+                "goals": "Student will increase accuracy in answering inferential questions to 80% independently.",
+                "recommendations": "Focus on strategies for inferential thinking and provide opportunities for independent comprehension tasks."
+            },
+            "spelling": {
+                "current_grade": "Grade X",
+                "present_level": "Able to spell up to List 6 of Dolch sight words with 90% accuracy and lists 7 to 11 with 70% accuracy.",
+                "goals": "Student will achieve 90% accuracy in spelling sight words from lists 7 to 11.",
+                "recommendations": "Provide targeted practice for sight words and incorporate regular spelling checks."
+            },
+            "writing": {
+                "current_grade": "Grade X",
+                "present_level": "Can write 3-4 sentences on a familiar topic but needs keywords/assistance for unfamiliar topics.",
+                "goals": "Student will be able to write 3-4 sentences on unfamiliar topics with minimal assistance.",
+                "recommendations": "Implement specific handwriting practice and provide graphic organizers for unfamiliar topics."
+            },
+            "concept": {
+                "current_grade": "Grade X",
+                "present_level": "Has general awareness of things around him but is unable to generalize learned concepts.",
+                "goals": "Student will improve the ability to generalize learned concepts to new situations.",
+                "recommendations": "Provide opportunities for applying concepts in real-world scenarios."
+            },
+            "math": {
+                "current_grade": "Grade X",
+                "present_level": "No awareness of ascending or descending order and place value. Can add and subtract 2-digit numbers without carryover.",
+                "goals": "Student will develop an understanding of ascending/descending order and place value.",
+                "recommendations": "Provide explicit instruction on place value and advanced addition/subtraction."
+            },
             "handwriting": {
                 "present_level": "Handwriting is illegible. While letter formation, conforming to lines, and spacing between letters are generally good, Student E joins words. Can perform far point and near point copying.",
                 "goals": "Student E will improve the legibility of handwriting. Student E will increase spacing between words to improve overall readability.",
                 "recommendations": "Provide regular handwriting practice focusing on appropriate spacing between words."
+            },
+            "grammar": {
+                "present_level": "Can identify nouns, verbs, prepositions, adjectives, pronouns, and articles with help. Can handle word order but struggles with singular/plural and tense.",
+                "goals": "Student will improve understanding and application of singular/plural and tense in sentences.",
+                "recommendations": "Provide explicit instruction and targeted practice on singular/plural forms and verb tenses."
+            },
+            "behaviour": {
+                "present_level": "Student is a visual learner. Has a sitting tolerance of 15-20 minutes and an attention span of 5 minutes.",
+                "goals": "Student will increase sitting tolerance and attention span during academic tasks.",
+                "recommendations": "Implement strategies to gradually increase sitting tolerance and attention span."
             }
         }
 
