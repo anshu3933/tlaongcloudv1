@@ -6,11 +6,14 @@ This is a **production-ready Special Education Service** that provides comprehen
 
 **NEW**: The service now includes an **integrated Assessment Pipeline** that processes psychoeducational assessment documents using Google Document AI, extracts test scores, and quantifies data for enhanced RAG-powered IEP generation.
 
-## Current State: PRODUCTION READY WITH ASSESSMENT PIPELINE FULLY OPERATIONAL ✅
+## Current State: PRODUCTION READY WITH LATEST CRITICAL FIXES ✅
 
-### 🎉 **MAJOR BREAKTHROUGH (July 17, 2025)** - COMPLETE ASSESSMENT PIPELINE SUCCESS
+### 🎉 **LATEST FIXES (January 22, 2025)** - ASSESSMENT UPLOAD & GROUNDING METADATA
 
 #### **CRITICAL ISSUES RESOLVED**
+- ✅ **Assessment Upload Fix**: Fixed NoneType strip error in grade extraction regex patterns - RESOLVED
+- ✅ **Grounding Metadata API**: Backend now returns grounding metadata in API responses - FIXED  
+- ✅ **Null-Safe Regex**: All regex pattern matching now handles None values gracefully - SECURED
 - ✅ **Port Conflict Resolution**: Multiple services on port 8005 causing routing issues - FIXED
 - ✅ **Event Loop Conflicts**: Background tasks failing with "Cannot run event loop while another loop is running" - SOLVED with thread executor
 - ✅ **Background Task Execution**: FastAPI BackgroundTasks not triggering due to service conflicts - WORKING
@@ -159,6 +162,45 @@ GET    /api/v1/templates/disability/{id}/grade/{level}  # Templates by disabilit
 - **JSON Content**: Flexible content storage for IEP sections
 
 ## Critical Troubleshooting Guide
+
+### **CURRENT ISSUE: Google Search Grounding Not Working (January 22, 2025)** ⚠️
+
+#### **Problem**: Google Search Grounding toggle shows no evidence of functionality
+**Symptoms**:
+- Frontend has grounding toggle implemented and visible
+- Backend API supports grounding and returns metadata in responses (fixed)
+- User reports "absolutely no evidence of grounding with GS, even when toggled on"
+- No citations, sources, or grounding metadata visible in generated IEPs
+
+**Suspected Root Causes**:
+1. **Frontend Parameter Issue**: Frontend may not be passing `enable_google_search_grounding=true` to backend
+2. **API Request Malformed**: Parameter might be getting stripped or incorrectly formatted
+3. **Frontend Display Issue**: Backend returns metadata but frontend doesn't display it
+4. **Google API Limitation**: Search grounding may not be available with current API access
+
+**Backend Status**: ✅ FIXED
+- Grounding metadata now included in API responses (line 529 in iep_service.py)
+- Google Search API imports corrected
+- Response structure enhanced to include grounding_metadata field
+
+**Investigation Steps**:
+```bash
+# 1. Monitor backend logs for grounding activity
+tail -f server_final.log | grep "grounding\|Google Search"
+
+# 2. Test backend grounding directly
+curl -X POST "http://localhost:8005/api/v1/ieps/advanced/create-with-rag?enable_google_search_grounding=true&current_user_id=1&current_user_role=teacher" \
+  -H "Content-Type: application/json" \
+  -d '{"student_id":"UUID","template_id":"UUID","academic_year":"2025-2026"...}'
+
+# 3. Check frontend network requests in browser DevTools
+# Look for: enable_google_search_grounding parameter in request payload
+```
+
+**Next Actions**: 
+- Investigate frontend parameter passing
+- Verify frontend display of grounding metadata
+- Test Google Search API access directly
 
 ### **MAJOR ISSUE RESOLVED: Port Conflicts (July 17, 2025)**
 

@@ -21,7 +21,7 @@ class StrictGeminiModel(BaseModel):
 class StudentInfoSchema(StrictGeminiModel):
     name: str = Field(..., min_length=1, max_length=100)
     dob: str = Field(..., pattern=r'^(\d{4}-\d{2}-\d{2}|To be provided)$')
-    grade: str = Field(..., min_length=1, max_length=20, alias="class")
+    grade: str = Field(..., min_length=1, max_length=100, alias="class", description="Current grade level (e.g., 'Grade 5', 'Kindergarten', 'Grade 3-4 Performance Level')")
     date_of_iep: str = Field(..., pattern=r'^\d{4}-\d{2}-\d{2}$')
 
 

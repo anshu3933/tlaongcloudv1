@@ -255,7 +255,8 @@ class DocumentAIService:
             for pattern in config["patterns"]:
                 matches = re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE)
                 for match in matches:
-                    finding = match.group(1).strip()
+                    finding_raw = match.group(1) if match.groups() and match.group(1) else match.group(0)
+                    finding = finding_raw.strip() if finding_raw else ""
                     if finding and len(finding) > 10:  # Filter out very short matches
                         area_findings.append(finding)
             
@@ -277,7 +278,8 @@ class DocumentAIService:
         for pattern in recommendation_patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE | re.DOTALL)
             for match in matches:
-                rec_text = match.group(1).strip()
+                rec_raw = match.group(1) if match.groups() and match.group(1) else match.group(0)
+                rec_text = rec_raw.strip() if rec_raw else ""
                 if rec_text and len(rec_text) > 15:
                     # Split by bullet points or line breaks
                     rec_items = re.split(r'[•\n]', rec_text)
@@ -299,7 +301,8 @@ class DocumentAIService:
         for pattern in concern_patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for match in matches:
-                concern = match.group(1).strip()
+                concern_raw = match.group(1) if match.groups() and match.group(1) else match.group(0)
+                concern = concern_raw.strip() if concern_raw else ""
                 if concern and len(concern) > 5:
                     areas_of_concern.append(concern)
         
@@ -316,7 +319,8 @@ class DocumentAIService:
         for pattern in strength_patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for match in matches:
-                strength = match.group(1).strip()
+                strength_raw = match.group(1) if match.groups() and match.group(1) else match.group(0)
+                strength = strength_raw.strip() if strength_raw else ""
                 if strength and len(strength) > 10:
                     strengths.append(strength)
         
@@ -494,7 +498,8 @@ class DocumentAIService:
             for pattern in patterns:
                 matches = re.finditer(pattern, text, re.IGNORECASE | re.DOTALL)
                 for match in matches:
-                    goal_text = match.group(1).strip()
+                    goal_raw = match.group(1) if match.groups() and match.group(1) else match.group(0)
+                    goal_text = goal_raw.strip() if goal_raw else ""
                     if goal_text and len(goal_text) > 20:  # Filter out very short matches
                         subject_goals["goals_from_text"].append({
                             "text": goal_text,
@@ -508,7 +513,8 @@ class DocumentAIService:
                 rec_pattern = rf"{keyword}[^.]*?(?:recommend|suggest|should|need|require)[^.]*?\."
                 matches = re.finditer(rec_pattern, text, re.IGNORECASE)
                 for match in matches:
-                    rec_text = match.group(0).strip()
+                    rec_raw = match.group(0) if match.group(0) else ""
+                    rec_text = rec_raw.strip() if rec_raw else ""
                     if rec_text and len(rec_text) > 25:
                         subject_goals["recommendations"].append({
                             "text": rec_text,
@@ -521,7 +527,8 @@ class DocumentAIService:
                 perf_pattern = rf"{keyword}[^.]*?(?:level|grade|score|percentage|accuracy)[^.]*?\."
                 matches = re.finditer(perf_pattern, text, re.IGNORECASE)
                 for match in matches:
-                    perf_text = match.group(0).strip()
+                    perf_raw = match.group(0) if match.group(0) else ""
+                    perf_text = perf_raw.strip() if perf_raw else ""
                     if perf_text and len(perf_text) > 15:
                         subject_goals["performance_indicators"].append({
                             "text": perf_text,
@@ -550,7 +557,8 @@ class DocumentAIService:
         for pattern in general_goal_patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for match in matches:
-                goal_text = match.group(1).strip() if match.groups() else match.group(0).strip()
+                goal_raw = match.group(1) if match.groups() and match.group(1) else match.group(0)
+                goal_text = goal_raw.strip() if goal_raw else ""
                 if goal_text and len(goal_text) > 30:
                     general_goals.append({
                         "text": goal_text,
@@ -644,7 +652,11 @@ class DocumentAIService:
             for pattern in patterns:
                 matches = re.finditer(pattern, text, re.IGNORECASE)
                 for match in matches:
-                    grade_text = match.group(1).strip()
+                    grade_text = match.group(1) if match.groups() else match.group(0)
+                    if grade_text:
+                        grade_text = grade_text.strip()
+                    else:
+                        continue
                     
                     # Normalize grade format
                     normalized_grade = self._normalize_grade_format(grade_text)
@@ -702,7 +714,9 @@ class DocumentAIService:
         if not grade_text:
             return None
             
-        grade_text = grade_text.lower().strip()
+        grade_text = str(grade_text).lower().strip() if grade_text else ""
+        if not grade_text:
+            return None
         
         # Handle kindergarten
         if grade_text in ['k', 'kindergarten', 'kinder']:

@@ -75,9 +75,17 @@ class GeminiClient:
         try:
             from google import genai as new_genai
             from google.genai import types as new_genai_types
-            self.new_genai_client = new_genai.Client()
-            self.new_genai_types = new_genai_types
-            logger.info("🔧 New GenAI client initialized for Google Search grounding")
+            
+            # Initialize with API key if available
+            if self.api_key:
+                self.new_genai_client = new_genai.Client(api_key=self.api_key)
+                self.new_genai_types = new_genai_types
+                logger.info("🔧 New GenAI client initialized with API key for Google Search grounding")
+            else:
+                # Try with default credentials
+                self.new_genai_client = new_genai.Client()
+                self.new_genai_types = new_genai_types
+                logger.info("🔧 New GenAI client initialized with default credentials for Google Search grounding")
         except Exception as e:
             logger.warning(f"⚠️ Could not initialize new GenAI client: {e}")
             self.new_genai_client = None
@@ -135,28 +143,65 @@ class GeminiClient:
                 if enable_google_search_grounding and self.new_genai_client:
                     logger.info("🌐 Using new GenAI client for Google Search grounding")
                     
-                    # Use the correct new GenAI API for grounding
+                    # Use the correct new GenAI API for grounding (following Google's recommendations)
                     grounding_tool = self.new_genai_types.Tool(
                         google_search=self.new_genai_types.GoogleSearch()
                     )
                     
+                    # Configure tool usage to encourage Google Search ONLY when user enables grounding
+                    tool_config = None
+                    try:
+                        # Only force tool usage when user explicitly enables grounding via frontend toggle
+                        if hasattr(self.new_genai_types, 'ToolConfig'):
+                            tool_config = self.new_genai_types.ToolConfig(
+                                function_calling_config=self.new_genai_types.FunctionCallingConfig(
+                                    mode='ANY'  # Encourage tool usage when grounding is enabled
+                                ) if hasattr(self.new_genai_types, 'FunctionCallingConfig') else None
+                            )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not create ToolConfig (SDK may not support it): {e}")
+                    
+                    # CRITICAL: NO response_mime_type for grounded path due to API constraint
+                    # Google Search grounding conflicts with JSON format requirements
                     config = self.new_genai_types.GenerateContentConfig(
                         tools=[grounding_tool],
-                        temperature=0.8,
+                        tool_config=tool_config,
+                        temperature=1.0,  # Google recommends 1.0 for ideal grounding results when enabled
                         top_p=0.95,
                         top_k=40,
                         max_output_tokens=32768
+                        # NO response_mime_type - grounding generates text that we'll parse to JSON
                     )
+                    
+                    # For grounded path, enhance prompt to ensure JSON structure in response
+                    grounded_prompt = f"""
+{prompt}
+
+CRITICAL INSTRUCTION FOR GROUNDED RESPONSES:
+You must provide your response in valid JSON format, surrounded by ```json and ``` markers.
+Use Google Search when needed to ground your response with current information.
+Structure your JSON response exactly as requested in the original prompt.
+
+Example format:
+```json
+{{
+  "field1": "value1",
+  "field2": "value2"
+}}
+```
+"""
                     
                     def generate_with_grounding():
                         return self.new_genai_client.models.generate_content(
                             model="gemini-2.5-flash",
-                            contents=prompt,
+                            contents=grounded_prompt,
                             config=config
                         )
                     
                     response = await loop.run_in_executor(None, generate_with_grounding)
                     
+                    # Extract grounding metadata from new GenAI client response
+                    logger.info("🔍 Extracting grounding metadata from new GenAI response...")
                     
                 elif enable_google_search_grounding:
                     logger.warning("⚠️ Google Search grounding requested but new GenAI client not available, falling back to standard generation")
@@ -179,68 +224,107 @@ class GeminiClient:
                 # Extract text and clean it
                 raw_text = response.text
                 
-                # Extract grounding metadata if available (for new GenAI client responses)
+                # Extract grounding metadata if available
                 grounding_metadata = None
-                if enable_google_search_grounding:
+                if enable_google_search_grounding and self.new_genai_client:
                     try:
+                        # For new GenAI client, check if response has candidates with grounding_metadata
                         if hasattr(response, 'candidates') and response.candidates:
                             candidate = response.candidates[0]
                             if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
+                                # Convert to dict using model_dump() method
                                 gm = candidate.grounding_metadata
-                                grounding_metadata = {
-                                    "web_search_queries": getattr(gm, 'web_search_queries', []) or [],
-                                    "grounding_chunks": [],
-                                    "grounding_supports": []
-                                }
+                                gm_dict = gm.model_dump() if hasattr(gm, 'model_dump') else dict(gm)
                                 
-                                # Safely extract grounding chunks
-                                if hasattr(gm, 'grounding_chunks') and gm.grounding_chunks:
-                                    for chunk in gm.grounding_chunks:
-                                        if hasattr(chunk, 'web') and chunk.web:
-                                            grounding_metadata["grounding_chunks"].append({
-                                                "uri": getattr(chunk.web, 'uri', ''),
-                                                "title": getattr(chunk.web, 'title', 'Unknown')
-                                            })
-                                
-                                # Safely extract grounding supports
-                                if hasattr(gm, 'grounding_supports') and gm.grounding_supports:
-                                    for support in gm.grounding_supports:
-                                        if hasattr(support, 'segment') and support.segment:
-                                            grounding_metadata["grounding_supports"].append({
-                                                "segment_text": getattr(support.segment, 'text', ''),
-                                                "start_index": getattr(support.segment, 'start_index', 0),
-                                                "end_index": getattr(support.segment, 'end_index', 0),
-                                                "chunk_indices": getattr(support, 'grounding_chunk_indices', []) or []
-                                            })
-                                
-                                logger.info(f"🌐 Grounding metadata extracted: {len(grounding_metadata.get('grounding_chunks', []))} sources")
+                                if gm_dict:
+                                    grounding_metadata = {
+                                        "web_search_queries": gm_dict.get('web_search_queries', []),
+                                        "grounding_chunks": [],
+                                        "grounding_supports": []
+                                    }
+                                    
+                                    # Extract web search results
+                                    if 'grounding_chunks' in gm_dict and gm_dict['grounding_chunks']:
+                                        for chunk in gm_dict['grounding_chunks']:
+                                            if isinstance(chunk, dict) and 'web' in chunk and chunk['web']:
+                                                web_info = chunk['web']
+                                                grounding_metadata["grounding_chunks"].append({
+                                                    "uri": web_info.get('uri', ''),
+                                                    "title": web_info.get('title', '') or web_info.get('domain', 'Unknown')
+                                                })
+                                    
+                                    # Extract grounding supports
+                                    if 'grounding_supports' in gm_dict and gm_dict['grounding_supports']:
+                                        for support in gm_dict['grounding_supports']:
+                                            if isinstance(support, dict) and 'segment' in support:
+                                                grounding_metadata["grounding_supports"].append({
+                                                    "segment_text": support['segment'].get('text', ''),
+                                                    "start_index": support['segment'].get('start_index', 0),
+                                                    "end_index": support['segment'].get('end_index', 0),
+                                                    "chunk_indices": support.get('grounding_chunk_indices', [])
+                                                })
+                                    
+                                    # Log successful grounding or graceful fallback
+                                    query_count = len(grounding_metadata.get('web_search_queries', []))
+                                    source_count = len(grounding_metadata.get('grounding_chunks', []))
+                                    
+                                    if query_count > 0 or source_count > 0:
+                                        logger.info(f"🌐 Grounding metadata extracted from new GenAI: {query_count} queries, {source_count} sources")
+                                    else:
+                                        logger.info("📝 Google Search grounding enabled but model chose not to search (answering from knowledge)")
+                                        grounding_metadata = None  # Clear empty metadata
+                            else:
+                                logger.info("📝 Google Search grounding enabled but no metadata returned (model answered from knowledge)")
+                        else:
+                            logger.info("📝 Google Search grounding enabled but no candidates returned")
                     except Exception as e:
-                        logger.warning(f"⚠️ Error extracting grounding metadata: {e}")
+                        logger.warning(f"⚠️ Error extracting grounding metadata from new GenAI: {e}")
+                        import traceback
+                        traceback.print_exc()
                         grounding_metadata = None
                 
-                # Enhanced JSON extraction for grounded responses
+                # Two-Path JSON Processing: Enhanced extraction for grounded responses
                 raw_text = raw_text.strip()
                 
-                # Remove markdown code blocks if present
-                if raw_text.startswith("```json"):
-                    raw_text = raw_text[7:]
-                if raw_text.endswith("```"):
-                    raw_text = raw_text[:-3]
-                
-                raw_text = raw_text.strip()
-                
-                # For grounded responses, try to extract JSON from within explanatory text
                 if enable_google_search_grounding and self.new_genai_client:
-                    json_start = raw_text.find('{')
-                    json_end = raw_text.rfind('}') + 1
-                    if json_start != -1 and json_end > json_start:
-                        potential_json = raw_text[json_start:json_end]
-                        try:
-                            json.loads(potential_json)
-                            raw_text = potential_json
-                            logger.info("🌐 Extracted JSON from grounded response")
-                        except json.JSONDecodeError:
-                            logger.warning("⚠️ Could not extract clean JSON from grounded response, using full text")
+                    # GROUNDED PATH: Parse text response to extract JSON
+                    logger.info("🌐 Processing grounded text response for JSON extraction")
+                    
+                    # Step 1: Remove markdown code blocks
+                    if "```json" in raw_text and "```" in raw_text:
+                        json_start_marker = raw_text.find("```json")
+                        if json_start_marker != -1:
+                            json_start = json_start_marker + 7  # Skip "```json"
+                            json_end_marker = raw_text.find("```", json_start)
+                            if json_end_marker != -1:
+                                raw_text = raw_text[json_start:json_end_marker].strip()
+                                logger.info("🌐 Extracted JSON from markdown code block")
+                    
+                    # Step 2: Extract JSON from within explanatory text
+                    if not raw_text.startswith('{'):
+                        json_start = raw_text.find('{')
+                        json_end = raw_text.rfind('}') + 1
+                        if json_start != -1 and json_end > json_start:
+                            potential_json = raw_text[json_start:json_end]
+                            try:
+                                # Validate the extracted JSON
+                                json.loads(potential_json)
+                                raw_text = potential_json
+                                logger.info("🌐 Successfully extracted JSON from grounded response text")
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"⚠️ JSON extraction failed from grounded response: {e}")
+                                # Keep original text and try parsing anyway
+                    
+                else:
+                    # NON-GROUNDED PATH: Standard JSON processing (already in JSON format)
+                    logger.info("📝 Processing standard JSON response (non-grounded)")
+                    
+                    # Remove markdown code blocks if present (defensive)
+                    if raw_text.startswith("```json"):
+                        raw_text = raw_text[7:]
+                    if raw_text.endswith("```"):
+                        raw_text = raw_text[:-3]
+                    raw_text = raw_text.strip()
                 
                 # Check response size
                 response_size = len(raw_text.encode('utf-8'))
@@ -249,9 +333,17 @@ class GeminiClient:
                     # Truncate at JSON boundary if possible
                     raw_text = self._truncate_json_safely(raw_text, self.max_response_size)
                 
-                # Validate it's valid JSON
+                # Parse and enhance JSON with grounding metadata
                 try:
-                    json.loads(raw_text)
+                    parsed_json = json.loads(raw_text)
+                    
+                    # Inject grounding metadata into the parsed JSON if available
+                    if grounding_metadata and isinstance(parsed_json, dict):
+                        parsed_json["google_search_grounding"] = grounding_metadata
+                        logger.info(f"🌐 Injected grounding metadata into JSON response with {len(grounding_metadata.get('grounding_chunks', []))} sources")
+                        # Convert back to string for the response
+                        raw_text = json.dumps(parsed_json, ensure_ascii=False, indent=2)
+                    
                 except json.JSONDecodeError as e:
                     logger.error(f"Gemini returned invalid JSON: {e}")
                     logger.error(f"Raw response (first 500 chars): {raw_text[:500]}")
@@ -426,62 +518,9 @@ class GeminiClient:
             }
             }
         
-        # Add grounding instructions if enabled
+        # Note: When Google Search grounding is enabled, the native tool will automatically
+        # search for relevant information and provide grounding metadata. No manual instructions needed.
         grounding_instructions = ""
-        if enable_google_search_grounding:
-            disability_type = student_data.get('disability_type', 'the identified disability')
-            grade_level = student_data.get('grade_level', 'appropriate')
-            grounding_instructions = f"""
-🌐 GOOGLE SEARCH GROUNDING ENABLED:
-You have access to current research and best practices through Google Search. Use this capability to:
-- Research latest evidence-based interventions for {disability_type} (extracted from assessment)
-- Find current Grade {grade_level} academic standards and expectations (based on student's assessed grade level)
-- Identify recent developments in special education accommodations and services
-- Search for current IEP goal writing best practices and SMART goal examples
-- Look up evidence-based teaching strategies for identified areas of need
-- Find current legal requirements and compliance guidelines for IEP development
-
-🚨 GROUNDING ACKNOWLEDGMENT REQUIREMENTS:
-When Google Search grounding is enabled, you MUST:
-1. Add a "grounding_metadata" section to your JSON response with the following structure:
-   "grounding_metadata": {{
-     "google_search_used": true,
-     "search_queries_performed": ["list of specific search queries you used"],
-     "evidence_based_improvements": [
-       {{
-         "section": "section_name",
-         "improvement": "description of how current research influenced this content",
-         "source_type": "research study"  // REQUIRED: Must be one of: "research study", "best practice", "current standard", or "legal requirement"
-       }}
-     ],
-⚠️ CRITICAL LIMITS FOR SCHEMA COMPLIANCE:
-   - evidence_based_improvements: MAXIMUM 15 items (each MUST have "section", "improvement", AND "source_type" fields)
-   - search_queries_performed: MAXIMUM 15 items  
-   - current_research_applied: MAXIMUM 800 characters
-     "current_research_applied": "brief summary of how current research enhanced the IEP recommendations (MAX 800 chars)"
-   
-   🚨 REQUIRED FIELDS IN EACH evidence_based_improvements ITEM:
-   - "section": section name (e.g., "reading_familiar", "math", "oral_language")
-   - "improvement": description of improvement made based on research
-   - "source_type": MUST be one of: "research study", "best practice", "current standard", "legal requirement"
-   }}
-
-2. In your content generation, incorporate and acknowledge current research findings
-3. Ensure recommendations reflect the most current evidence-based practices for {disability_type} in Grade {grade_level}
-
-🚨 ENHANCED CONTENT REQUIREMENTS WITH GROUNDING:
-When Google Search grounding is enabled, you MUST enrich the following sections with additional fields:
-- For "reading" section: Add "current" field describing current reading performance based on latest research
-- For "spelling" section: Add "current" field with current spelling abilities and "goals" with research-based targets
-- For "writing" section: Add "current" field with current writing skills and "goals" with evidence-based objectives
-- For "math" section: Add "current" field with current math performance and "goals" aligned with grade standards
-- For "concept" section: Add "current" field with concept understanding and "goals" for development
-
-These enriched fields should contain 200-500 characters each and incorporate insights from your Google Search findings.
-
-IMPORTANT: Ground your recommendations in current research while maintaining the JSON response format.
-The disability type and grade level above are extracted from the actual assessment data.
-"""
         
         if is_plop_template:
             # Special PLOP format instructions
@@ -571,7 +610,12 @@ CRITICAL INSTRUCTIONS:
 3. Output ONLY the JSON object - nothing before or after it
 4. Ensure all quotes and special characters are properly escaped
 5. Follow the exact structure shown in the example
-6. {"INCLUDE grounding_metadata section ONLY if Google Search grounding is enabled above" if enable_google_search_grounding else "Do NOT include grounding_metadata section (Google Search grounding is disabled)"}
+
+🚨 FIELD LENGTH REQUIREMENTS:
+- "class" field in student_info: MAXIMUM 100 characters, use concise grade format (e.g., "Grade 5", "K", "Grade 3-4 Level")
+- If grade unknown, use "TBD" or "Grade TBD" - DO NOT use long explanatory text
+- All name fields: MAXIMUM 100 characters
+- Keep field values concise and professional
 
 🔥 DOCUMENT AI EXTRACTED ASSESSMENT DATA (PRIMARY SOURCE FOR ALL IEP CONTENT):
 {self._format_assessment_data_for_prompt(student_data)}

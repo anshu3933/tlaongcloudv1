@@ -23,7 +23,7 @@ class PLOPStudentInfo(BaseModel):
     """Student information for PLOP format"""
     name: str = Field(..., description="Student name")
     dob: str = Field(..., description="Date of birth in YYYY-MM-DD format")
-    class_: str = Field(..., alias="class", min_length=1, max_length=20, description="Current grade level from assessment")
+    class_: str = Field(..., alias="class", min_length=1, max_length=100, description="Current grade level from assessment (e.g., 'Grade 5', 'Kindergarten', 'Grade 3-4 Performance Level')")
     date_of_iep: str = Field(..., description="IEP date in YYYY-MM-DD format")
 
 class PLOPIEPResponse(BaseModel):
